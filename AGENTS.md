@@ -141,6 +141,10 @@ Skills own workflows; root owns hard policy and routing.
 - Calls should be boring: complex decisions happen above; call args/object fields are names, literals, or simple property reads.
 - Prefer early returns over nested condition pyramids. Split code into gather -> normalize -> decide -> act.
 - Use named intermediates only for domain meaning or readability; avoid temp-variable soup.
+- Prefer existing narrow helpers over repeated casts/guards. Add local helpers when 2+ nearby call sites share real boundary logic.
+- Prefer ctor parameter properties for injected deps/config. Do not ban them for erasable-syntax purity.
+- Prefer `satisfies` for registries/config maps; derive types from schemas when a runtime schema already exists.
+- Table-drive repetitive tests when it reduces code and keeps failure names clear.
 - Dynamic import: no static+dynamic import for same prod module. Use `*.runtime.ts` lazy boundary. After edits: `pnpm build`; check `[INEFFECTIVE_DYNAMIC_IMPORT]`.
 - Cycles: keep `pnpm check:import-cycles` + architecture/madge green.
 - Classes: no prototype mixins/mutations. Prefer inheritance/composition. Tests prefer per-instance stubs.
