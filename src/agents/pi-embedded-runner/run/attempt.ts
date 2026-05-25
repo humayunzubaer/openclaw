@@ -41,6 +41,7 @@ import { getCurrentPluginMetadataSnapshot } from "../../../plugins/current-plugi
 import { buildAgentHookContextChannelFields } from "../../../plugins/hook-agent-context.js";
 import { resolveBlockMessage } from "../../../plugins/hook-decision-types.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
+import type { PluginMetadataSnapshot } from "../../../plugins/plugin-metadata-snapshot.js";
 import {
   extractModelCompat,
   resolveToolCallArgumentsEncoding,
@@ -124,6 +125,7 @@ import {
 } from "../../pi-embedded-helpers.js";
 import { countActiveToolExecutions } from "../../pi-embedded-subscribe.handlers.tools.js";
 import { subscribeEmbeddedPiSession } from "../../pi-embedded-subscribe.js";
+import { isCoreToolResultMediaTrustedName } from "../../pi-embedded-subscribe.tools.js";
 import { createPreparedEmbeddedPiSettingsManager } from "../../pi-project-settings.js";
 import {
   applyPiAutoCompactionGuard,
@@ -447,6 +449,54 @@ export {
   resolveEmbeddedAgentBaseStreamFn,
   resolveEmbeddedAgentStreamFn,
 };
+
+function isBundledManifestTool(params: {
+  pluginMetadataSnapshot: PluginMetadataSnapshot | undefined;
+  pluginId: string;
+  toolName: string;
+}): boolean {
+  const record = params.pluginMetadataSnapshot?.byPluginId.get(params.pluginId);
+  return (
+    record?.origin === "bundled" && record.contracts?.tools?.includes(params.toolName) === true
+  );
+}
+
+function collectTrustedPluginLocalMediaToolNames(params: {
+  tools: Array<{ name?: string }>;
+  pluginMetadataSnapshot: PluginMetadataSnapshot | undefined;
+}): Set<string> {
+  const trusted = new Set<string>();
+  for (const tool of params.tools) {
+    const toolName = tool.name?.trim();
+    if (!toolName) {
+      continue;
+    }
+    const meta = getPluginToolMeta(tool as Parameters<typeof getPluginToolMeta>[0]);
+    if (
+      meta &&
+      isBundledManifestTool({
+        pluginMetadataSnapshot: params.pluginMetadataSnapshot,
+        pluginId: meta.pluginId,
+        toolName,
+      })
+    ) {
+      trusted.add(toolName);
+    }
+  }
+  return trusted;
+}
+
+function collectTrustedLocalMediaToolNames(params: {
+  coreBuiltinToolNames: ReadonlySet<string>;
+  trustedPluginToolNames: ReadonlySet<string>;
+}): Set<string> {
+  return new Set([
+    ...[...params.coreBuiltinToolNames].filter((toolName) =>
+      isCoreToolResultMediaTrustedName(toolName),
+    ),
+    ...params.trustedPluginToolNames,
+  ]);
+}
 
 const MAX_BTW_SNAPSHOT_MESSAGES = 100;
 const TOOL_SEARCH_CONTROL_ALLOWLIST_NAMES = [
@@ -1651,6 +1701,11 @@ export async function runEmbeddedAttempt(
       modelApi: params.model.api,
       model: params.model,
     };
+    const pluginMetadataSnapshot = getCurrentPluginMetadataSnapshot({
+      config: params.config,
+      env: process.env,
+      workspaceDir: effectiveWorkspace,
+    });
     const tools = normalizeAgentRuntimeTools({
       runtimePlan: params.runtimePlan,
       tools: toolsEnabled ? toolsRaw : [],
@@ -1720,6 +1775,10 @@ export async function runEmbeddedAttempt(
       senderUsername: params.senderUsername,
       senderE164: params.senderE164,
       warn: (message) => log.warn(message),
+    });
+    const trustedPluginLocalMediaToolNames = collectTrustedPluginLocalMediaToolNames({
+      tools: toolsEnabled ? [...toolsRaw, ...filteredBundledTools] : [],
+      pluginMetadataSnapshot,
     });
     const normalizedBundledTools =
       filteredBundledTools.length > 0
@@ -2202,11 +2261,7 @@ export async function runEmbeddedAttempt(
         cwd: effectiveWorkspace,
         agentDir,
         cfg: params.config,
-        pluginMetadataSnapshot: getCurrentPluginMetadataSnapshot({
-          config: params.config,
-          env: process.env,
-          workspaceDir: effectiveWorkspace,
-        }),
+        pluginMetadataSnapshot,
         contextTokenBudget: params.contextTokenBudget,
       });
       const piAutoCompactionGuardArgs = {
@@ -2285,10 +2340,8 @@ export async function runEmbeddedAttempt(
         cfg: params.config,
         agentId: sessionAgentId,
       });
-      // Exact raw names of every tool registered for this run, including
-      // bundled/plugin tools. Used as the raw-name set for the trusted local
-      // MEDIA: passthrough gate: a normalized alias is not sufficient — the
-      // emitted tool name must match an exact registration of this run.
+      // Exact raw names of every tool registered for this run. This remains
+      // available for diagnostics; local MEDIA: trust is narrower below.
       const builtinToolNames = new Set(
         uncompactedEffectiveTools.flatMap((tool) => {
           const name = (tool.name ?? "").trim();
@@ -2303,6 +2356,10 @@ export async function runEmbeddedAttempt(
       const coreBuiltinToolNames = collectCoreBuiltinToolNames(uncompactedEffectiveTools, {
         isPluginTool: (tool) =>
           Boolean(getPluginToolMeta(tool as Parameters<typeof getPluginToolMeta>[0])),
+      });
+      const trustedLocalMediaToolNames = collectTrustedLocalMediaToolNames({
+        coreBuiltinToolNames,
+        trustedPluginToolNames: trustedPluginLocalMediaToolNames,
       });
       const clientToolNameConflicts = findClientToolNameConflicts({
         tools: clientTools ?? [],
@@ -3292,6 +3349,7 @@ export async function runEmbeddedAttempt(
           sessionId: params.sessionId,
           agentId: sessionAgentId,
           builtinToolNames,
+          trustedLocalMediaToolNames,
           internalEvents: params.internalEvents,
         }),
       );
