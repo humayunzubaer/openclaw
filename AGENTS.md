@@ -35,9 +35,9 @@ Skills own workflows; root owns hard policy and routing.
 
 ## Map
 
-- Core TS: `src/`, `ui/`, `packages/`; plugins: `extensions/`; SDK: `src/plugin-sdk/*`; channels: `src/channels/*`; loader: `src/plugins/*`; protocol: `src/gateway/protocol/*`; docs/apps: `docs/`, `apps/`.
+- Core TS: `src/`, `ui/`, `packages/`; plugins: `extensions/`; SDK: `src/plugin-sdk/*`; channels: `src/channels/*`; loader: `src/plugins/*`; protocol: `src/gateway/protocol/*`; TUI: `src/tui/*`; skills: `skills/`; docs/apps: `docs/`, `apps/`.
 - Installers: sibling `../openclaw.ai`.
-- Scoped guides: `extensions/`, `src/{plugin-sdk,channels,plugins,gateway,gateway/protocol,agents}/`, `test/helpers*/`, `docs/`, `ui/`, `scripts/`.
+- Scoped guides: `extensions/{,acpx/}`, `docs/{,reference/templates/}`, `scripts/`, `ui/`, `test/helpers/`, `src/{plugin-sdk,plugins,tui,infra/outbound}/`, `src/channels/{,plugins/contracts/test-helpers/}`, `src/gateway/{,protocol,server-methods}/`, `src/agents/{,tools,pi-embedded-runner/run}/`.
 
 ## Docs
 
