@@ -1,0 +1,18 @@
+{
+  "name": "customs-bond-vat-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Customs Bond & VAT Audit Copilot — local, offline-first audit workbench",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "optionalDependencies": {
+    "tesseract.js": "^5.1.0"
+  },
+  "comment": "Core runs with zero dependencies (built-in Node http). OCR (tesseract.js) and AI providers are optional add-ons enabled from Settings."
+}
