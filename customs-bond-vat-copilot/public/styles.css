@@ -87,3 +87,30 @@ dialog::backdrop { background: rgba(15,23,42,.45); }
 .loading { text-align: center; color: var(--muted); padding: 60px; }
 .muted { color: var(--muted); }
 .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* টেবিল ছোট স্ক্রিনে অনুভূমিকভাবে স্ক্রল করবে, পেজ নয় */
+table { display: block; overflow-x: auto; white-space: nowrap; }
+
+/* ---- মোবাইল/ট্যাব রেসপন্সিভ ---- */
+@media (max-width: 640px) {
+  body { font-size: 14px; }
+  main { margin: 14px auto; padding: 0 10px; }
+  .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
+  .brand strong { font-size: 14px; }
+  .topbar .btn { padding: 6px 10px; font-size: 13px; }
+
+  /* ট্যাব বার অনুভূমিক স্ক্রল */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; padding: 9px 12px; }
+
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .grid-audits { grid-template-columns: 1fr; }
+  .section-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* আপলোড/অ্যাকশন সারি উলম্বভাবে সাজবে, ইনপুট পূর্ণ-প্রস্থ */
+  .row { gap: 8px; }
+  .row select, .row input[type="file"] { max-width: 100% !important; width: 100%; }
+
+  dialog { width: 96vw; padding: 16px; }
+  .report-out { padding: 12px; font-size: 13px; }
+}

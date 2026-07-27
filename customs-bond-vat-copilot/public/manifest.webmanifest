@@ -1,0 +1,15 @@
+{
+  "name": "Customs Bond & VAT Audit Copilot",
+  "short_name": "Audit Copilot",
+  "description": "বন্ড ও ভ্যাট অডিটের লোকাল ওয়ার্কবেঞ্চ",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1f5f8b",
+  "lang": "bn",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

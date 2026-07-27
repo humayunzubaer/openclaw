@@ -3,6 +3,7 @@
 // তারপর ব্রাউজারে খুলুন:  http://localhost:4700
 
 import http from "node:http";
+import os from "node:os";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,8 @@ const MIME = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".png": "image/png",
 };
 
 const json = (res, code, data) => {
@@ -206,7 +209,26 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+// একই Wi-Fi-তে ফোন/অন্য ডিভাইস থেকে ঢোকার জন্য এই কম্পিউটারের LAN ঠিকানা।
+function lanAddresses() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list ?? []) {
+      if (ni.family === "IPv4" && !ni.internal) out.push(ni.address);
+    }
+  }
+  return out;
+}
+
+// 0.0.0.0 = সব ইন্টারফেস, যাতে ফোন থেকেও পৌঁছানো যায় (লোকাল Wi-Fi-এর মধ্যেই)।
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n  Customs Bond & VAT Audit Copilot`);
-  console.log(`  → http://localhost:${PORT}\n`);
+  console.log(`  এই কম্পিউটারে:  http://localhost:${PORT}`);
+  const lan = lanAddresses();
+  if (lan.length) {
+    console.log(`\n  📱 মোবাইল/ট্যাবে (একই Wi-Fi):`);
+    for (const ip of lan) console.log(`      http://${ip}:${PORT}`);
+    console.log(`\n  (ফোনের ব্রাউজারে উপরের ঠিকানা টাইপ করুন)`);
+  }
+  console.log("");
 });
