@@ -289,6 +289,15 @@ async function renderReports(body, id) {
   });
 }
 
+// অ্যাপ-জুড়ে global সেটিংস পর্দা (অডিট না খুলেই)
+async function viewSettings() {
+  app.innerHTML = `
+    <div class="section-head"><h2>⚙️ সেটিংস</h2></div>
+    <p class="muted">এই সেটিংস সব অডিটে প্রযোজ্য (app-wide)। একবার সেট করলেই যথেষ্ট।</p>
+    <div id="settings-body"></div>`;
+  renderSettings(document.getElementById("settings-body"));
+}
+
 async function renderSettings(body) {
   const [s, providers] = await Promise.all([api.get("/api/settings"), api.get("/api/providers")]);
   body.innerHTML = `
@@ -335,6 +344,7 @@ function fileToBase64(file) {
 
 // ---------- boot ----------
 document.getElementById("home-btn").onclick = viewHome;
+document.getElementById("settings-btn").onclick = viewSettings;
 (async function boot() {
   MODULES = await api.get("/api/modules");
   await refreshOcrBadge();
