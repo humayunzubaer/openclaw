@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="bn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Customs Bond & VAT Audit Copilot</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">⚖️</span>
+        <div>
+          <strong>Customs Bond &amp; VAT Audit Copilot</strong>
+          <small id="ocr-badge" class="badge badge-muted">OCR: যাচাই করা হচ্ছে…</small>
+        </div>
+      </div>
+      <button id="home-btn" class="btn btn-ghost">🏠 হোম</button>
+    </header>
+
+    <main id="app"><div class="loading">লোড হচ্ছে…</div></main>
+
+    <!-- New audit modal -->
+    <dialog id="new-audit-dialog">
+      <form method="dialog" id="new-audit-form">
+        <h3>নতুন অডিট তৈরি করুন</h3>
+        <label>প্রতিষ্ঠানের নাম
+          <input name="institution" required placeholder="যেমন: ABC Industries Ltd." />
+        </label>
+        <label>অডিটের ধরন (Module)
+          <select name="moduleId" id="module-select" required></select>
+        </label>
+        <label>নিরীক্ষাকাল (Period)
+          <input name="period" placeholder="যেমন: জুলাই ২০২৪ – জুন ২০২৫" />
+        </label>
+        <label>নিরীক্ষক (Auditor)
+          <input name="auditor" placeholder="আপনার নাম" />
+        </label>
+        <div class="row-end">
+          <button type="button" class="btn btn-ghost" id="cancel-new">বাতিল</button>
+          <button type="submit" class="btn btn-primary">তৈরি করুন</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
