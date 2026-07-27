@@ -1,0 +1,10 @@
+# অডিট কেস-ফোল্ডারে বাস্তব প্রতিষ্ঠানের সংবেদনশীল ডেটা থাকে — কমিট করা হয় না।
+audits/*
+!audits/.gitkeep
+
+# API key ও লোকাল কনফিগ — কমিট করা হয় না।
+settings.json
+
+node_modules/
+*.log
+.DS_Store

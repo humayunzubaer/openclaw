@@ -10,8 +10,10 @@ import { fileURLToPath } from "node:url";
 import * as store from "./storage.js";
 import { getModule, listModules } from "./modules/index.js";
 import { isOcrAvailable, recognize } from "./ocr.js";
-import { getProvider, listProviders } from "./analysis/index.js";
+import { listProviders, draftFindings } from "./ai/index.js";
 import { buildReport } from "./report/generate.js";
+import { toWordDoc, toXlsx, toPrintablePdfHtml } from "./report/export.js";
+import { getSettings, saveSettings, redactSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -114,9 +116,14 @@ const routes = [
     const module = getModule(audit?.moduleId);
     if (!module) return json(res, 404, { error: "not found" });
     const documents = await store.listDocuments(id);
-    const provider = getProvider(body.provider ?? "none");
-    const drafts = await provider.draftFindings({ module, documents });
-    json(res, 200, { provider: provider.id, drafts });
+    const settings = await getSettings();
+    const provider = body.provider ?? settings.aiProvider ?? "none";
+    try {
+      const result = await draftFindings(provider, { module, documents, settings });
+      json(res, 200, result);
+    } catch (err) {
+      json(res, 502, { error: "analysis_failed", message: String(err?.message ?? err) });
+    }
   }],
 
   ["GET", /^\/api\/audits\/([^/]+)\/working-paper$/, async ([id], _req, res) => json(res, 200, await store.getWorkingPaper(id))],
@@ -137,6 +144,46 @@ const routes = [
     } catch (err) {
       json(res, 400, { error: String(err?.message ?? err) });
     }
+  }],
+
+  ["GET", /^\/api\/audits\/([^/]+)\/export\/(word|excel|pdf)$/, async ([id, format], _req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const [findings, documents, workingPaper] = await Promise.all([
+      store.listFindings(id),
+      store.listDocuments(id),
+      store.getWorkingPaper(id),
+    ]);
+    const ctx = { audit, module, findings, documents, workingPaper };
+    const slug = (audit.institution || "audit").replace(/[^\wঀ-৿]+/g, "_");
+
+    if (format === "excel") {
+      const buf = toXlsx(ctx);
+      res.writeHead(200, {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${slug}.xlsx"`,
+      });
+      return res.end(buf);
+    }
+    if (format === "word") {
+      res.writeHead(200, {
+        "Content-Type": "application/msword; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${slug}.doc"`,
+      });
+      return res.end(toWordDoc(ctx));
+    }
+    // pdf → print-ready HTML (browser Save-as-PDF), offline
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(toPrintablePdfHtml(ctx));
+  }],
+
+  ["GET", /^\/api\/settings$/, async (_p, _req, res) => json(res, 200, redactSettings(await getSettings()))],
+  ["PUT", /^\/api\/settings$/, async (_p, req, res) => {
+    const patch = await readBody(req);
+    // খালি apiKey পাঠালে পুরনোটা মুছে ফেলা এড়াতে বাদ দিই
+    if (patch.claude && !patch.claude.apiKey) delete patch.claude.apiKey;
+    json(res, 200, redactSettings(await saveSettings(patch)));
   }],
 ];
 

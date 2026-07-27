@@ -74,7 +74,7 @@ async function viewAudit(id, tab = "dashboard") {
       <div><h2>${esc(audit.institution || "নামহীন")}</h2><div class="muted">${esc(module.title)}</div></div>
     </div>
     <div class="tabs" id="tabs">
-      ${["dashboard","documents","findings","working-paper","reports"].map((t)=>
+      ${["dashboard","documents","findings","working-paper","reports","settings"].map((t)=>
         `<div class="tab ${t===tab?"active":""}" data-tab="${t}">${tabLabel(t)}</div>`).join("")}
     </div>
     <div id="tab-body"><div class="loading">লোড হচ্ছে…</div></div>`;
@@ -87,9 +87,10 @@ async function viewAudit(id, tab = "dashboard") {
   if (tab === "findings") return renderFindings(body, id, module);
   if (tab === "working-paper") return renderWorkingPaper(body, id, module);
   if (tab === "reports") return renderReports(body, id);
+  if (tab === "settings") return renderSettings(body);
 }
 
-const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট" }[t]);
+const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট", settings:"⚙️ সেটিংস" }[t]);
 
 async function renderDashboard(body, id, module) {
   const [docs, findings] = await Promise.all([api.get(`/api/audits/${id}/documents`), api.get(`/api/audits/${id}/findings`)]);
@@ -177,7 +178,7 @@ async function renderFindings(body, id, module) {
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h3 style="margin:0">Findings (${findings.length})</h3>
       <div class="row">
-        <button class="btn btn-ghost" id="ai-draft">🤖 খসড়া তৈরি (checklist থেকে)</button>
+        <button class="btn btn-ghost" id="ai-draft">🤖 খসড়া তৈরি</button>
         <button class="btn btn-primary" id="add-finding">+ Finding যোগ</button>
       </div>
     </div>
@@ -185,9 +186,10 @@ async function renderFindings(body, id, module) {
 
   document.getElementById("add-finding").onclick = () => addOrEditFinding(id, module, null, () => renderFindings(body, id, module));
   document.getElementById("ai-draft").onclick = async () => {
-    if (!confirm("checklist অনুযায়ী খসড়া findings তৈরি হবে। এগুলো সম্পাদনাযোগ্য। এগিয়ে যাবেন?")) return;
-    const { drafts } = await api.send("POST", `/api/audits/${id}/analyze`, { provider: "none" });
-    for (const d of drafts) await api.send("POST", `/api/audits/${id}/findings`, d);
+    if (!confirm("সেটিংসে নির্বাচিত provider দিয়ে খসড়া findings তৈরি হবে। এগুলো সম্পাদনাযোগ্য। এগিয়ে যাবেন?")) return;
+    const r = await api.send("POST", `/api/audits/${id}/analyze`, {});
+    if (r.error) return alert("বিশ্লেষণ ব্যর্থ: " + (r.message || r.error));
+    for (const d of r.drafts) await api.send("POST", `/api/audits/${id}/findings`, d);
     renderFindings(body, id, module);
   };
   body.querySelectorAll(".finding-item").forEach((el) => {
@@ -259,21 +261,65 @@ async function renderWorkingPaper(body, id, module) {
 
 async function renderReports(body, id) {
   body.innerHTML = `
-    <div class="row" style="margin-bottom:14px">
-      <button class="btn btn-ghost" data-kind="working-paper">Working Paper</button>
-      <button class="btn btn-ghost" data-kind="note-sheet">Note Sheet</button>
-      <button class="btn btn-primary" data-kind="final">চূড়ান্ত রিপোর্ট</button>
-      <button class="btn btn-ghost" id="print-btn">🖨️ প্রিন্ট/PDF</button>
+    <div class="card" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <span class="muted">প্রিভিউ:</span>
+          <button class="btn btn-ghost btn-sm" data-kind="working-paper">Working Paper</button>
+          <button class="btn btn-ghost btn-sm" data-kind="note-sheet">Note Sheet</button>
+          <button class="btn btn-ghost btn-sm" data-kind="final">চূড়ান্ত রিপোর্ট</button>
+        </div>
+        <div class="row">
+          <span class="muted">Export:</span>
+          <button class="btn btn-primary btn-sm" data-export="word">📄 Word</button>
+          <button class="btn btn-primary btn-sm" data-export="excel">📊 Excel</button>
+          <button class="btn btn-primary btn-sm" data-export="pdf">📕 PDF</button>
+        </div>
+      </div>
     </div>
-    <div class="report-out" id="report-out"><div class="muted">উপরের বাটন থেকে রিপোর্ট বেছে নিন।</div></div>`;
+    <div class="report-out" id="report-out"><div class="muted">প্রিভিউ দেখতে উপরের বাটন চাপুন, অথবা সরাসরি Word/Excel/PDF export করুন।</div></div>`;
   body.querySelectorAll("[data-kind]").forEach((b)=> b.onclick = async () => {
     const { markdown, error } = await api.get(`/api/audits/${id}/report/${b.dataset.kind}`);
     document.getElementById("report-out").textContent = error ? "ত্রুটি: "+error : markdown;
   });
-  document.getElementById("print-btn").onclick = () => {
-    const w = window.open("", "_blank");
-    w.document.write(`<pre style="white-space:pre-wrap;font-family:'Noto Sans Bengali',serif;line-height:1.6;padding:24px">${esc(document.getElementById("report-out").textContent)}</pre>`);
-    w.document.close(); w.print();
+  body.querySelectorAll("[data-export]").forEach((b)=> b.onclick = () => {
+    const url = `/api/audits/${id}/export/${b.dataset.export}`;
+    if (b.dataset.export === "pdf") window.open(url, "_blank"); // print-ready page
+    else window.location.href = url; // download
+  });
+}
+
+async function renderSettings(body) {
+  const [s, providers] = await Promise.all([api.get("/api/settings"), api.get("/api/providers")]);
+  body.innerHTML = `
+    <div class="card" style="max-width:640px">
+      <h3>AI বিশ্লেষণ Provider</h3>
+      <label>Provider
+        <select id="s-provider">${providers.map((p)=>`<option value="${p.id}" ${s.aiProvider===p.id?"selected":""}>${esc(p.label)}</option>`).join("")}</select>
+      </label>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:12px">
+        <legend class="muted">Ollama (লোকাল, অফলাইন)</legend>
+        <label>Base URL<input id="s-ollama-url" value="${esc(s.ollama.baseUrl)}" /></label>
+        <label>Model<input id="s-ollama-model" value="${esc(s.ollama.model)}" placeholder="যেমন: llama3.1" /></label>
+        <div class="hint">Ollama ইনস্টল ও চালু থাকতে হবে (ollama serve; ollama pull &lt;model&gt;)।</div>
+      </fieldset>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:12px">
+        <legend class="muted">Claude API (অনলাইন)</legend>
+        <label>Model<input id="s-claude-model" value="${esc(s.claude.model)}" /></label>
+        <label>API Key ${s.claude.apiKeySet?'<span class="pill">সেট আছে ✓</span>':""}
+          <input id="s-claude-key" type="password" placeholder="${s.claude.apiKeySet?"পরিবর্তন করতে নতুন key দিন":"sk-ant-..."}" /></label>
+        <div class="hint">⚠️ Claude বেছে নিলে OCR টেক্সট ইন্টারনেটে API-তে যাবে (নথির ছবি নয়)।</div>
+      </fieldset>
+      <div class="row-end"><button class="btn btn-primary" id="s-save">সংরক্ষণ</button></div>
+    </div>`;
+  document.getElementById("s-save").onclick = async () => {
+    const patch = {
+      aiProvider: document.getElementById("s-provider").value,
+      ollama: { baseUrl: document.getElementById("s-ollama-url").value, model: document.getElementById("s-ollama-model").value },
+      claude: { model: document.getElementById("s-claude-model").value, apiKey: document.getElementById("s-claude-key").value },
+    };
+    await api.send("PUT", "/api/settings", patch);
+    const btn = document.getElementById("s-save"); btn.textContent = "✓ সংরক্ষিত"; setTimeout(()=>btn.textContent="সংরক্ষণ",1500);
   };
 }
 

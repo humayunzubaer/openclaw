@@ -56,7 +56,9 @@ src/
   server.js                       লোকাল সার্ভার (zero-dependency)
   storage.js                      অডিট = ফোল্ডার (JSON + নথি), পোর্টেবল
   ocr.js                          Tesseract wrapper (lazy, optional)
-  analysis/index.js               pluggable AI provider
+  ai/index.js                     pluggable AI provider (none / ollama / claude)
+  settings.js                     লোকাল সেটিংস (provider পছন্দ, API key)
+  report/export.js                Word / Excel / PDF export (zero-dependency)
   knowledge/bond-legal.js         আইন/বিধি নলেজ বেস
   modules/                        অডিট-টাইপ সংজ্ঞা (checklist, doc types, legal map)
   report/generate.js              Working Paper / Note Sheet / Final Report
