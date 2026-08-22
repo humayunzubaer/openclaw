@@ -27,32 +27,44 @@ test("entitlement within limit → ok, no revenue", () => {
   assert.equal(r.revenueImplication, 0);
 });
 
-test("B/E vs register: under-recording → diff × duty, high", () => {
+test("B/E (raw) vs register: under-recording → diff × duty, high", () => {
   const { results } = runNumericChecks(mod, {
-    "num-be-register": { beQty: 1000, registerQty: 850, dutyPerUnit: 30 },
+    "num-be-register-raw": { beQty: 1000, registerQty: 850, dutyPerUnit: 30 },
   });
-  const r = byId(results, "num-be-register");
+  const r = byId(results, "num-be-register-raw");
   assert.equal(r.status, "flag");
   assert.equal(r.severity, "high");
   assert.equal(r.discrepancy, 150);
   assert.equal(r.revenueImplication, 4500);
 });
 
-test("B/E vs register: over-recording → medium flag, no revenue", () => {
+test("B/E (raw) vs register: over-recording → medium flag, no revenue", () => {
   const { results } = runNumericChecks(mod, {
-    "num-be-register": { beQty: 800, registerQty: 900, dutyPerUnit: 30 },
+    "num-be-register-raw": { beQty: 800, registerQty: 900, dutyPerUnit: 30 },
   });
-  const r = byId(results, "num-be-register");
+  const r = byId(results, "num-be-register-raw");
   assert.equal(r.status, "flag");
   assert.equal(r.severity, "medium");
   assert.equal(r.revenueImplication, 0);
 });
 
-test("B/E vs register: exact match → ok", () => {
+test("B/E (raw) vs register: exact match → ok", () => {
   const { results } = runNumericChecks(mod, {
-    "num-be-register": { beQty: 900, registerQty: 900, dutyPerUnit: 30 },
+    "num-be-register-raw": { beQty: 900, registerQty: 900, dutyPerUnit: 30 },
   });
-  assert.equal(byId(results, "num-be-register").status, "ok");
+  assert.equal(byId(results, "num-be-register-raw").status, "ok");
+});
+
+test("B/E machinery & sample register checks exist and compute independently", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-be-register-machinery": { beQty: 5, registerQty: 4, dutyPerUnit: 100000 },
+    "num-be-register-sample": { beQty: 20, registerQty: 20, dutyPerUnit: 5 },
+  });
+  const mch = byId(results, "num-be-register-machinery");
+  const smp = byId(results, "num-be-register-sample");
+  assert.equal(mch.status, "flag");
+  assert.equal(mch.revenueImplication, 100000);
+  assert.equal(smp.status, "ok");
 });
 
 test("UD vs export: unsupported consumption → × duty, high", () => {

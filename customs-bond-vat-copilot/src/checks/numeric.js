@@ -47,26 +47,7 @@ const COMPUTERS = {
       [{ label: "অনুমোদিত entitlement", value: q(v.approvedEntitlement) }, { label: "আমদানি", value: q(v.imported) }, { label: "অতিরিক্ত", value: q(excess) }]);
   },
 
-  // ২ক) Bill of Entry (আমদানি) vs বন্ড রেজিস্টার লিপিবদ্ধ পরিমাণ
-  "num-be-register"(v) {
-    const diff = v.beQty - v.registerQty;
-    const bd = [
-      { label: "B/E আমদানি", value: q(v.beQty) },
-      { label: "রেজিস্টারে লিপিবদ্ধ", value: q(v.registerQty) },
-      { label: "পার্থক্য", value: q(diff) },
-    ];
-    if (Math.abs(diff) < 1e-6)
-      return ok("low", `B/E ${q(v.beQty)} একক = রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক; মিল আছে।`, { breakdown: bd });
-    if (diff > 0) {
-      const rev = diff * duty(v, "dutyPerUnit");
-      return flag("high", diff, "একক", rev,
-        `Bill of Entry অনুযায়ী আমদানি ${q(v.beQty)} একক, কিন্তু বন্ড রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক — ${q(diff)} একক রেজিস্টারভুক্ত হয়নি (unrecorded raw material; সম্ভাব্য অপসারণ)। সম্ভাব্য রাজস্ব প্রভাব BDT ${bdt(rev)}।`,
-        bd);
-    }
-    return { ...flag("medium", -diff, "একক", 0,
-      `বন্ড রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক B/E আমদানি ${q(v.beQty)} একক-এর চেয়ে ${q(-diff)} একক বেশি — over-recording/রেকর্ড অসঙ্গতি; যাচাই করুন। স্বয়ংক্রিয় রাজস্ব ধরা হয়নি।`,
-      bd) };
-  },
+  // ২ক) B/E vs রেজিস্টার — কাঁচামাল/মেশিনারিজ/Sample আলাদা (factory-এ তৈরি, নিচে দেখুন)
 
   // ২) প্রকৃত ব্যবহার vs অনুমোদিত input-output coefficient
   "num-coefficient"(v) {
@@ -80,15 +61,15 @@ const COMPUTERS = {
       [{ label: "অনুমোদিত ব্যবহার", value: q(allowed) }, { label: "প্রকৃত ব্যবহার", value: q(v.actualConsumed) }, { label: "অতিরিক্ত", value: q(excess) }]);
   },
 
-  // ২খ) UD-তে দাবিকৃত ব্যবহার vs প্রকৃত রপ্তানি দিয়ে সমর্থিত ব্যবহার
+  // ২খ) UD/EP দাবি vs প্রকৃত রপ্তানি (ইপিজেড হলে UP/UD-এর বদলে EP/Sales Contract)
   "num-ud-export"(v) {
     const unsupported = v.udClaimedRaw - v.exportBackedRaw;
     if (unsupported <= 0)
-      return ok("low", `UD-তে দাবিকৃত ব্যবহার ${q(v.udClaimedRaw)} একক প্রকৃত রপ্তানি-সমর্থিত ${q(v.exportBackedRaw)} একক দিয়ে সমর্থিত; ব্যত্যয় নেই।`);
+      return ok("low", `UD/EP-তে দাবিকৃত ব্যবহার ${q(v.udClaimedRaw)} একক প্রকৃত রপ্তানি-সমর্থিত ${q(v.exportBackedRaw)} একক দিয়ে সমর্থিত; ব্যত্যয় নেই।`);
     const rev = unsupported * duty(v, "dutyPerRawUnit");
     return flag("high", unsupported, "একক", rev,
-      `UD-তে দাবিকৃত কাঁচামাল ব্যবহার ${q(v.udClaimedRaw)} একক, কিন্তু প্রকৃত রপ্তানি (Bill of Export) দিয়ে সমর্থিত মাত্র ${q(v.exportBackedRaw)} একক — অসমর্থিত ${q(unsupported)} একক (রপ্তানি ছাড়াই শুল্কমুক্ত কাঁচামাল ব্যবহার)। সম্ভাব্য রাজস্ব প্রভাব BDT ${bdt(rev)}।`,
-      [{ label: "UD দাবি", value: q(v.udClaimedRaw) }, { label: "রপ্তানি-সমর্থিত", value: q(v.exportBackedRaw) }, { label: "অসমর্থিত", value: q(unsupported) }]);
+      `UD/EP (ইপিজেড হলে EP/Sales Contract)-এ দাবিকৃত কাঁচামাল ব্যবহার ${q(v.udClaimedRaw)} একক, কিন্তু প্রকৃত রপ্তানি (Bill of Export) দিয়ে সমর্থিত মাত্র ${q(v.exportBackedRaw)} একক — অসমর্থিত ${q(unsupported)} একক (রপ্তানি ছাড়াই শুল্কমুক্ত কাঁচামাল ব্যবহার)। সম্ভাব্য রাজস্ব প্রভাব BDT ${bdt(rev)}।`,
+      [{ label: "UD/EP দাবি", value: q(v.udClaimedRaw) }, { label: "রপ্তানি-সমর্থিত", value: q(v.exportBackedRaw) }, { label: "অসমর্থিত", value: q(unsupported) }]);
   },
 
   // ৩) কাঁচামাল material balance — অহিসাবকৃত (সম্ভাব্য স্থানীয় অপসারণ)
@@ -137,6 +118,33 @@ const COMPUTERS = {
       [{ label: "মেয়াদোত্তীর্ণ পরিমাণ", value: q(v.overstayQty) }]);
   },
 };
+
+// B/E (আমদানি) vs রেজিস্টার — একই যুক্তি, category-ভিত্তিক wording।
+// কাঁচামাল / মেশিনারিজ / Sample আলাদা করে যাচাই করা যায়।
+function beVsRegister(label) {
+  return (v) => {
+    const diff = v.beQty - v.registerQty;
+    const bd = [
+      { label: `${label} B/E আমদানি`, value: q(v.beQty) },
+      { label: "রেজিস্টারে লিপিবদ্ধ", value: q(v.registerQty) },
+      { label: "পার্থক্য", value: q(diff) },
+    ];
+    if (Math.abs(diff) < 1e-6)
+      return ok("low", `${label}: B/E ${q(v.beQty)} একক = রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক; মিল আছে।`, { breakdown: bd });
+    if (diff > 0) {
+      const rev = diff * duty(v, "dutyPerUnit");
+      return flag("high", diff, "একক", rev,
+        `${label} আমদানি: Bill of Entry অনুযায়ী ${q(v.beQty)} একক, কিন্তু রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক — ${q(diff)} একক রেজিস্টারভুক্ত হয়নি (unrecorded; সম্ভাব্য অপসারণ)। সম্ভাব্য রাজস্ব প্রভাব BDT ${bdt(rev)}।`,
+        bd);
+    }
+    return { ...flag("medium", -diff, "একক", 0,
+      `${label} আমদানি: রেজিস্টারে লিপিবদ্ধ ${q(v.registerQty)} একক B/E ${q(v.beQty)} একক-এর চেয়ে ${q(-diff)} একক বেশি — over-recording/রেকর্ড অসঙ্গতি; যাচাই করুন। স্বয়ংক্রিয় রাজস্ব ধরা হয়নি।`,
+      bd) };
+  };
+}
+COMPUTERS["num-be-register-raw"] = beVsRegister("কাঁচামাল");
+COMPUTERS["num-be-register-machinery"] = beVsRegister("মেশিনারিজ");
+COMPUTERS["num-be-register-sample"] = beVsRegister("Sample");
 
 /** একটি check-এর জন্য ইনপুট map → parsed Number map (খালি → NaN) */
 function parseValues(spec, raw) {
