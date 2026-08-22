@@ -201,4 +201,15 @@ export async function saveNumeric(auditId, { inputs, results, summary }) {
   return data;
 }
 
+// ---- Smart Evidence Chips (applied provenance + append-only audit trail) ----
+
+export async function getEvidence(auditId) {
+  return readJson(paths(auditId).evidence, { applied: {}, log: [] });
+}
+
+export async function saveEvidence(auditId, data) {
+  await writeJson(paths(auditId).evidence, { applied: data.applied ?? {}, log: data.log ?? [] });
+  return data;
+}
+
 export { paths };

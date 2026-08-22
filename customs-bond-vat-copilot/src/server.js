@@ -13,6 +13,7 @@ import { getModule, listModules } from "./modules/index.js";
 import { isOcrAvailable, recognize } from "./ocr.js";
 import { listProviders, draftFindings } from "./ai/index.js";
 import { runNumericChecks, resultToFinding } from "./checks/numeric.js";
+import { scanDocuments } from "./checks/evidence.js";
 import { buildReport } from "./report/generate.js";
 import { toWordDoc, toXlsx, toPrintablePdfHtml } from "./report/export.js";
 import { getSettings, saveSettings, redactSettings } from "./settings.js";
@@ -145,8 +146,62 @@ const routes = [
     const { inputs } = await readBody(req);
     const { results, summary } = runNumericChecks(module, inputs ?? {});
     await store.saveNumeric(id, { inputs: inputs ?? {}, results, summary });
+    // manual override হলে stale evidence-provenance বাদ দিই (badge সৎ রাখতে; log অক্ষত)
+    const ev = await store.getEvidence(id);
+    let pruned = false;
+    for (const key of Object.keys(ev.applied)) {
+      const [cId, iKey] = key.split("::");
+      const cur = inputs?.[cId]?.[iKey];
+      if (cur === undefined || Number(cur) !== Number(ev.applied[key].value)) { delete ev.applied[key]; pruned = true; }
+    }
+    if (pruned) await store.saveEvidence(id, ev);
     json(res, 200, { results, summary });
   }],
+  // Smart Evidence Chip: OCR টেক্সট থেকে সংখ্যা extract (context-aware suggestion সহ)
+  ["POST", /^\/api\/audits\/([^/]+)\/evidence\/scan$/, async ([id], req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const { docId } = await readBody(req);
+    const docs = await store.listDocuments(id);
+    const target = docId ? docs.filter((d) => d.id === docId) : docs;
+    json(res, 200, scanDocuments(target, module));
+  }],
+  // একটি chip → numeric field-এ প্রয়োগ + provenance ও audit trail লিপিবদ্ধ
+  ["POST", /^\/api\/audits\/([^/]+)\/evidence\/apply$/, async ([id], req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const { chip, checkId, inputKey } = await readBody(req);
+    const check = (module.numericChecks ?? []).find((c) => c.id === checkId);
+    const input = check?.inputs.find((i) => i.key === inputKey);
+    if (!check || !input) return json(res, 400, { error: "invalid check/input" });
+    if (!chip || typeof chip.value !== "number") return json(res, 400, { error: "chip.value (number) required" });
+
+    const numeric = await store.getNumeric(id);
+    const inputs = numeric.inputs ?? {};
+    (inputs[checkId] ??= {})[inputKey] = chip.value;
+    const { results, summary } = runNumericChecks(module, inputs);
+    await store.saveNumeric(id, { inputs, results, summary });
+
+    const key = `${checkId}::${inputKey}`;
+    const suggestion = (chip.suggestions ?? []).find((s) => s.checkId === checkId && s.inputKey === inputKey);
+    const ev = await store.getEvidence(id);
+    const prev = ev.applied[key] ?? null;
+    const record = {
+      checkId, inputKey, checkTitle: check.title, inputLabel: input.label,
+      value: chip.value, raw: chip.raw ?? String(chip.value),
+      docId: chip.docId ?? null, docFilename: chip.docFilename ?? null, page: chip.page ?? null,
+      sourceText: chip.sourceText ?? "", confidence: chip.confidence ?? null,
+      suggestionScore: suggestion?.score ?? null,
+      auditor: audit.auditor || "", appliedAt: new Date().toISOString(),
+    };
+    ev.applied[key] = record;
+    ev.log.push({ action: prev ? "override" : "apply", prevValue: prev?.value ?? null, ...record });
+    await store.saveEvidence(id, ev);
+    json(res, 200, { numeric: { results, summary }, applied: record });
+  }],
+  ["GET", /^\/api\/audits\/([^/]+)\/evidence$/, async ([id], _req, res) => json(res, 200, await store.getEvidence(id))],
   // flag হওয়া numeric result → finding (ডুপ্লিকেট এড়াতে একই title-এর numeric finding থাকলে skip)
   ["POST", /^\/api\/audits\/([^/]+)\/numeric\/to-findings$/, async ([id], req, res) => {
     const { checkIds } = await readBody(req);

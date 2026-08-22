@@ -245,11 +245,17 @@ function addOrEditFinding(id, module, existing, done) {
 const SEV = { high: { l: "গুরুতর", c: "var(--high)" }, medium: { l: "মাঝারি", c: "var(--med,#b8860b)" }, low: { l: "স্বাভাবিক", c: "var(--ok,#2e7d32)" } };
 
 async function renderNumeric(body, id, module) {
-  const data = await api.get(`/api/audits/${id}/numeric`);
+  const [data, evidence] = await Promise.all([
+    api.get(`/api/audits/${id}/numeric`),
+    api.get(`/api/audits/${id}/evidence`),
+  ]);
   const specs = data.specs || [];
   const inputs = data.inputs || {};
   let results = data.results || [];
+  let applied = evidence.applied || {};
   const resById = () => Object.fromEntries(results.map((r) => [r.id, r]));
+  const provKey = (cid, key) => `${cid}::${key}`;
+  const flatFields = specs.flatMap((s) => s.inputs.map((inp) => ({ checkId: s.id, checkTitle: s.title, inputKey: inp.key, inputLabel: inp.label })));
 
   if (!specs.length) {
     body.innerHTML = `<div class="empty">এই মডিউলে সংখ্যাগত check নেই।</div>`;
@@ -261,6 +267,7 @@ async function renderNumeric(body, id, module) {
     const fields = s.inputs.map((inp) => `
       <label class="num-field">${esc(inp.label)}${inp.unit ? ` <span class="muted">(${esc(inp.unit)})</span>` : ""}${inp.optional ? ' <span class="muted">— ঐচ্ছিক</span>' : ""}
         <input type="number" step="any" inputmode="decimal" data-check="${s.id}" data-key="${inp.key}" value="${saved[inp.key] ?? ""}" />
+        <div class="prov" data-prov="${s.id}::${inp.key}"></div>
       </label>`).join("");
     return `<div class="card num-card" data-check="${s.id}">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
@@ -276,6 +283,8 @@ async function renderNumeric(body, id, module) {
     <div class="row" style="justify-content:space-between;margin-bottom:12px">
       <div><h3 style="margin:0">🧮 সংখ্যাগত যাচাই</h3><div class="muted" style="font-size:13px">সংখ্যা বসান → হিসাব করুন। ব্যত্যয় পেলে "Finding" চেপে চূড়ান্ত রিপোর্টে নিন।</div></div>
       <div class="row">
+        <button class="btn btn-ghost" id="num-evidence">🔍 নথি থেকে Evidence</button>
+        <button class="btn btn-ghost" id="num-trail">🧾 Trail</button>
         <button class="btn btn-ghost" id="num-promote-all">flag → Findings</button>
         <button class="btn btn-primary" id="num-compute">হিসাব করুন</button>
       </div>
@@ -300,7 +309,17 @@ async function renderNumeric(body, id, module) {
          <div class="stat"><div class="n">৳${bdt(subtotal)}</div><div class="l">সম্ভাব্য রাজস্ব (উপমোট)</div></div></div>`
       : "";
   };
+
+  const renderProvenance = () => {
+    body.querySelectorAll(".prov").forEach((el) => {
+      const pv = applied[el.dataset.prov];
+      el.innerHTML = pv
+        ? `<span class="prov-badge" title="উৎস: ${esc(pv.sourceText)}">📄 ${esc(pv.docFilename || "?")} · পৃ.${pv.page ?? "?"} · ${Math.round((pv.confidence ?? 0) * 100)}%</span>`
+        : "";
+    });
+  };
   renderResults();
+  renderProvenance();
 
   const collectInputs = () => {
     const out = {};
@@ -317,8 +336,88 @@ async function renderNumeric(body, id, module) {
     btn.textContent = "হিসাব হচ্ছে…"; btn.disabled = true;
     const r = await api.send("POST", `/api/audits/${id}/numeric`, { inputs: collectInputs() });
     results = r.results || [];
+    const ev = await api.get(`/api/audits/${id}/evidence`); // manual override → provenance prune reflect
+    applied = ev.applied || {};
     renderResults();
+    renderProvenance();
     btn.textContent = "✓ হিসাব হয়েছে"; setTimeout(() => { btn.textContent = "হিসাব করুন"; btn.disabled = false; }, 1200);
+  };
+
+  const applyChip = async (chip, checkId, inputKey) => {
+    const resp = await api.send("POST", `/api/audits/${id}/evidence/apply`, { chip, checkId, inputKey });
+    if (resp.error) { alert("প্রয়োগ ব্যর্থ: " + resp.error); return false; }
+    const inp = body.querySelector(`input[data-check="${checkId}"][data-key="${inputKey}"]`);
+    if (inp) inp.value = chip.value;
+    applied[provKey(checkId, inputKey)] = resp.applied;
+    results = resp.numeric.results;
+    renderResults();
+    renderProvenance();
+    return true;
+  };
+
+  const fieldOptions = (selKey) =>
+    flatFields.map((f) => `<option value="${f.checkId}::${f.inputKey}" ${selKey === `${f.checkId}::${f.inputKey}` ? "selected" : ""}>${esc(f.checkTitle)} → ${esc(f.inputLabel)}</option>`).join("");
+
+  document.getElementById("num-evidence").onclick = async () => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "evi-dialog";
+    dlg.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">🔍 নথি থেকে Smart Evidence</h3><button class="btn btn-ghost btn-sm" id="evi-close">বন্ধ</button></div>
+      <div class="muted" style="font-size:13px;margin:6px 0 12px">OCR-করা নথি থেকে সংখ্যা তোলা হলো — প্রতিটি chip-এ document, পৃষ্ঠা, source টেক্সট, field-সাজেশন ও confidence আছে। সঠিক field বেছে "প্রয়োগ" চাপুন।</div>
+      <div id="evi-body"><div class="loading">স্ক্যান হচ্ছে…</div></div>`;
+    document.body.appendChild(dlg); dlg.showModal();
+    dlg.querySelector("#evi-close").onclick = () => { dlg.close(); dlg.remove(); };
+    const scan = await api.send("POST", `/api/audits/${id}/evidence/scan`, {});
+    const eb = dlg.querySelector("#evi-body");
+    if (!scan.totalChips) {
+      eb.innerHTML = `<div class="empty">OCR-করা নথিতে কোনো সংখ্যা পাওয়া যায়নি। আগে "📁 নথি" ট্যাবে OCR চালান।</div>`;
+      return;
+    }
+    const chipMap = {};
+    for (const g of scan.groups) chipMap[g.docId] = g.chips;
+    eb.innerHTML = scan.groups.map((g) => `
+      <div class="evi-group"><div class="evi-doc">📄 ${esc(g.filename)} <span class="muted">(${g.chips.length}টি সংখ্যা)</span></div>
+      ${g.chips.map((c, i) => {
+        const top = c.suggestions[0];
+        const conf = Math.round(c.confidence * 100);
+        const cc = conf >= 70 ? "var(--ok)" : conf >= 40 ? "var(--med,#b8860b)" : "var(--high)";
+        return `<div class="evi-chip" data-gi="${esc(g.docId)}" data-ci="${i}">
+          <div class="row" style="justify-content:space-between;align-items:flex-start">
+            <div><span class="evi-val">${bdt(c.value)}</span> <span class="muted">পৃ.${c.page}</span></div>
+            <span class="evi-conf" style="color:${cc}">confidence ${conf}%</span>
+          </div>
+          <div class="evi-src muted">“${esc(c.sourceText)}”</div>
+          <div class="row" style="margin-top:6px;gap:6px">
+            <select class="evi-field">${fieldOptions(top ? `${top.checkId}::${top.inputKey}` : "")}</select>
+            <button class="btn btn-primary btn-sm evi-apply">প্রয়োগ</button>
+          </div></div>`;
+      }).join("")}</div>`).join("");
+    eb.querySelectorAll(".evi-chip").forEach((el) => {
+      el.querySelector(".evi-apply").onclick = async (e) => {
+        const chip = chipMap[el.dataset.gi][Number(el.dataset.ci)];
+        const [checkId, inputKey] = el.querySelector(".evi-field").value.split("::");
+        e.target.textContent = "…"; e.target.disabled = true;
+        const okApply = await applyChip(chip, checkId, inputKey);
+        e.target.textContent = okApply ? "✓ প্রয়োগ হয়েছে" : "প্রয়োগ";
+        e.target.disabled = okApply;
+      };
+    });
+  };
+
+  document.getElementById("num-trail").onclick = async () => {
+    const ev = await api.get(`/api/audits/${id}/evidence`);
+    const dlg = document.createElement("dialog");
+    dlg.className = "evi-dialog";
+    const rows = (ev.log || []).slice().reverse().map((l) => `<tr>
+      <td>${l.appliedAt ? new Date(l.appliedAt).toLocaleString("en-CA") : "—"}</td>
+      <td>${esc(l.action)}${l.prevValue != null ? ` <span class="muted">(আগে ${bdt(l.prevValue)})</span>` : ""}</td>
+      <td>${esc(l.checkTitle || "")} → ${esc(l.inputLabel || "")}</td>
+      <td style="text-align:right">${bdt(l.value)}</td>
+      <td>${esc(l.docFilename || "—")} পৃ.${l.page ?? "—"}</td>
+      <td>${esc(l.auditor || "—")}</td></tr>`).join("");
+    dlg.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">🧾 Evidence audit trail</h3><button class="btn btn-ghost btn-sm" id="tr-close">বন্ধ</button></div>
+      ${rows ? `<div style="overflow:auto;margin-top:10px"><table class="evi-trail"><thead><tr><th>সময়</th><th>action</th><th>field</th><th>মান</th><th>উৎস</th><th>নিরীক্ষক</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">এখনো কোনো evidence প্রয়োগ হয়নি।</div>`}`;
+    document.body.appendChild(dlg); dlg.showModal();
+    dlg.querySelector("#tr-close").onclick = () => { dlg.close(); dlg.remove(); };
   };
 
   document.getElementById("num-promote-all").onclick = async () => {

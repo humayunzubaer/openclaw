@@ -62,6 +62,7 @@ src/
   knowledge/bond-legal.js         আইন/বিধি নলেজ বেস
   modules/                        অডিট-টাইপ সংজ্ঞা (checklist, doc types, numeric specs, legal map)
   checks/numeric.js               সংখ্যাগত auto-check ইঞ্জিন (reconciliation + রাজস্ব হিসাব)
+  checks/evidence.js              Smart Evidence Chip extraction (OCR → context-aware সংখ্যা)
   report/generate.js              Working Paper / Note Sheet / Final Report
 public/                           UI (ড্যাশবোর্ড, নথি, findings, সংখ্যাগত যাচাই, রিপোর্ট)
 audits/                           প্রতিটি অডিটের কেস-ফোল্ডার (git-ignored)
@@ -87,6 +88,19 @@ test/                             node:test (শূন্য-নির্ভর�
 - শুল্ক-কর/একক ঐচ্ছিক — না দিলে শুধু পরিমাণ-ব্যত্যয় দেখায়, রাজস্ব ০।
 - flag হওয়া result "➕ Finding" চেপে চূড়ান্ত রিপোর্টে নেওয়া যায় (ডুপ্লিকেট বাদ)। **দ্বৈত গণনা এড়াতে** সংখ্যাগত উপমোট নিজে থেকে চূড়ান্ত রাজস্ব-মোটে যোগ হয় না — শুধু গৃহীত Finding-ই যোগ হয়।
 - সব হিসাব সার্ভারে (`src/checks/numeric.js`), তাই testable ও রিপোর্টে (Word/Excel/PDF) অন্তর্ভুক্ত।
+
+## Smart Evidence Chip (OCR → সংখ্যা)
+
+"🧮 সংখ্যাগত যাচাই" ট্যাবে **🔍 নথি থেকে Evidence** চাপলে OCR-করা নথি থেকে সংখ্যা তোলা হয়। generic number নয় — প্রতিটি **Evidence Chip** ধরে রাখে:
+
+- **document** (কোন নথি) ও **page** (পৃষ্ঠা, form-feed দিয়ে সনাক্ত)
+- **source text** — সংখ্যার আশপাশের OCR স্নিপেট (কোথা থেকে এলো)
+- **field suggestion** — context-aware: keyword (label + check-title + synonym) মিলিয়ে কোন check-এর কোন input-এ বসবে (যেমন "মেশিনারিজ রেজিস্টার" → মেশিনারিজ check-এর registerQty)
+- **confidence score** — token-মান + field-match + unit/currency cue মিলিয়ে ০–১
+
+নিরীক্ষক সঠিক field বেছে **প্রয়োগ** চাপলে মানটি field-এ বসে, numeric পুনঃহিসাব হয়, এবং **audit trail** (`evidence.json`) লেখা হয় — কোন মান, কোন নথির কোন পৃষ্ঠা থেকে, কোন confidence-এ, কে, কখন প্রয়োগ করলেন (override হলে আগের মানসহ)। **🧾 Trail** বাটনে পুরো log দেখা যায়। field-এ provenance badge (📄 নথি · পৃ.N · %) দেখায় মানটি কোথা থেকে এলো; হাতে বদলালে badge স্বয়ংক্রিয়ভাবে সরে যায় (log অক্ষত থাকে)।
+
+> extraction ইঞ্জিন `src/checks/evidence.js`; OCR চালু (`npm install tesseract.js`) থাকলে নথির টেক্সট থেকেই সংখ্যা আসে। auto-map নয় — টুল সাজেশন দেয়, চূড়ান্ত সিদ্ধান্ত নিরীক্ষকের।
 
 ## রিইউজ কীভাবে কাজ করে
 
