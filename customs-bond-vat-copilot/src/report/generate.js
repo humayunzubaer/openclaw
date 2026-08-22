@@ -15,8 +15,32 @@ function evidenceNames(finding, documents) {
     .join(", ");
 }
 
+const SEV_LABEL = { high: "গুরুতর", medium: "মাঝারি", low: "স্বাভাবিক" };
+
+/** সংখ্যাগত auto-check ফলাফল → markdown সেকশন (computed rows only) */
+function numericSection(numeric) {
+  const results = (numeric?.results ?? []).filter((r) => r.status === "flag" || r.status === "ok");
+  if (!results.length) return "";
+  const subtotal = results
+    .filter((r) => r.status === "flag")
+    .reduce((s, r) => s + Number(r.revenueImplication || 0), 0);
+  const lines = [];
+  lines.push("| Check | ফলাফল | ব্যত্যয় | রাজস্ব প্রভাব (BDT) |");
+  lines.push("|-------|-------|---------|--------------------|");
+  for (const r of results) {
+    const status = r.status === "flag" ? `⚠ ${SEV_LABEL[r.severity] ?? r.severity}` : "✓ ব্যত্যয় নেই";
+    const disc = r.status === "flag" ? `${bdt(r.discrepancy)} ${r.unit ?? ""}`.trim() : "—";
+    lines.push(`| ${r.title} | ${status} | ${disc} | ${bdt(r.revenueImplication || 0)} |`);
+  }
+  lines.push("");
+  lines.push(`**সংখ্যাগত যাচাইয়ে চিহ্নিত সম্ভাব্য রাজস্ব (উপমোট): BDT ${bdt(subtotal)}**`);
+  lines.push("");
+  lines.push("> নোট: এগুলো auditor-প্রদত্ত সংখ্যা থেকে স্বয়ংক্রিয় হিসাব। Finding হিসেবে গ্রহণ করলে তবেই চূড়ান্ত রাজস্ব-সারসংক্ষেপে যোগ হয় (দ্বৈত গণনা এড়াতে)।");
+  return lines.join("\n");
+}
+
 /** Working Paper — বিস্তারিত কার্যপত্র */
-export function buildWorkingPaper({ audit, module, findings, documents, workingPaper }) {
+export function buildWorkingPaper({ audit, module, findings, documents, workingPaper, numeric }) {
   const lines = [];
   lines.push(`# Working Paper — ${module.title}`);
   lines.push("");
@@ -30,6 +54,14 @@ export function buildWorkingPaper({ audit, module, findings, documents, workingP
     lines.push(`## ${section}`);
     const note = workingPaper?.sections?.[section];
     lines.push(note?.trim() ? note : "_(নোট যুক্ত করুন)_");
+    lines.push("");
+  }
+
+  const numSec = numericSection(numeric);
+  if (numSec) {
+    lines.push("## সংখ্যাগত যাচাই (Auto-check)");
+    lines.push("");
+    lines.push(numSec);
     lines.push("");
   }
 
@@ -68,7 +100,7 @@ export function buildNoteSheet({ audit, module, findings }) {
 }
 
 /** Final Audit Report */
-export function buildFinalReport({ audit, module, findings, documents }) {
+export function buildFinalReport({ audit, module, findings, documents, numeric }) {
   const total = findings.reduce((s, f) => s + Number(f.revenueImplication || 0), 0);
   const lines = [];
   lines.push(`# চূড়ান্ত নিরীক্ষা প্রতিবেদন (Final Audit Report)`);
@@ -96,10 +128,17 @@ export function buildFinalReport({ audit, module, findings, documents }) {
     if (ev) lines.push(`**Evidence:** ${ev}`);
     lines.push("");
   });
-  lines.push("## ৪. রাজস্ব প্রভাব (সারসংক্ষেপ)");
-  lines.push(`চিহ্নিত অসঙ্গতির ভিত্তিতে সম্ভাব্য মোট আদায়যোগ্য/পরিহারযোগ্য রাজস্ব: **BDT ${bdt(total)}**।`);
+  const numSec = numericSection(numeric);
+  if (numSec) {
+    lines.push("## ৪. সংখ্যাগত যাচাই (Auto-check)");
+    lines.push(numSec);
+    lines.push("");
+  }
+
+  lines.push(`## ${numSec ? "৫" : "৪"}. রাজস্ব প্রভাব (সারসংক্ষেপ)`);
+  lines.push(`চিহ্নিত (গৃহীত) অসঙ্গতির ভিত্তিতে সম্ভাব্য মোট আদায়যোগ্য/পরিহারযোগ্য রাজস্ব: **BDT ${bdt(total)}**।`);
   lines.push("");
-  lines.push("## ৫. সুপারিশ");
+  lines.push(`## ${numSec ? "৬" : "৫"}. সুপারিশ`);
   lines.push("_(সুপারিশ এখানে যুক্ত করুন)_");
   return lines.join("\n");
 }

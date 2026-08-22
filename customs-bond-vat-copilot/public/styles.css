@@ -114,3 +114,13 @@ table { display: block; overflow-x: auto; white-space: nowrap; }
   dialog { width: 96vw; padding: 16px; }
   .report-out { padding: 12px; font-size: 13px; }
 }
+
+/* ---------- Numeric auto-check ---------- */
+.num-card { margin-bottom: 14px; }
+.num-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; margin-top: 12px; }
+.num-field { font-size: 13px; color: var(--muted); }
+.num-field input { text-align: right; }
+.num-result:not(:empty) { margin-top: 12px; }
+.num-out { border-radius: 10px; padding: 10px 12px; font-size: 13.5px; line-height: 1.55; background: #fff; border: 1px solid var(--line); }
+.num-out.flag { border-left: 4px solid var(--high); background: #fdf3f2; }
+.num-out.ok { border-left: 4px solid var(--ok); background: #f2faf6; }

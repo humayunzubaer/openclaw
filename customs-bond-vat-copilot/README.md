@@ -60,11 +60,29 @@ src/
   settings.js                     লোকাল সেটিংস (provider পছন্দ, API key)
   report/export.js                Word / Excel / PDF export (zero-dependency)
   knowledge/bond-legal.js         আইন/বিধি নলেজ বেস
-  modules/                        অডিট-টাইপ সংজ্ঞা (checklist, doc types, legal map)
+  modules/                        অডিট-টাইপ সংজ্ঞা (checklist, doc types, numeric specs, legal map)
+  checks/numeric.js               সংখ্যাগত auto-check ইঞ্জিন (reconciliation + রাজস্ব হিসাব)
   report/generate.js              Working Paper / Note Sheet / Final Report
-public/                           UI (ড্যাশবোর্ড, নথি, findings, রিপোর্ট)
+public/                           UI (ড্যাশবোর্ড, নথি, findings, সংখ্যাগত যাচাই, রিপোর্ট)
 audits/                           প্রতিটি অডিটের কেস-ফোল্ডার (git-ignored)
+test/                             node:test (শূন্য-নির্ভরতা) — চালান: node --test
 ```
+
+## সংখ্যাগত যাচাই (Auto-check)
+
+"🧮 সংখ্যাগত যাচাই" ট্যাবে নিরীক্ষক সংখ্যা বসালে টুল স্বয়ংক্রিয়ভাবে ঘাটতি ও সম্ভাব্য রাজস্ব হিসাব করে। বন্ড (non-garments) মডিউলে এখন ৫টি check:
+
+| Check | কী হিসাব হয় | আইন |
+|-------|-------------|-----|
+| Entitlement অতিক্রম | আমদানি − অনুমোদিত entitlement; অতিরিক্ত × শুল্ক-কর | BWL Rules |
+| Coefficient অতিরিক্ত ব্যবহার | প্রকৃত ব্যবহার − (উৎপাদন × coefficient) | BWL Rules |
+| কাঁচামাল Reconciliation | (Opening+Import) − (রপ্তানি-ব্যবহার + অপচয় + Closing) = অহিসাবকৃত | Customs Act §156 |
+| অপচয় (Wastage) | দাবিকৃত − (ব্যবহৃত × অনুমোদিত হার%) | BWL Rules |
+| Overstay | মেয়াদোত্তীর্ণ পরিমাণ × শুল্ক-কর | BWL Rules |
+
+- শুল্ক-কর/একক ঐচ্ছিক — না দিলে শুধু পরিমাণ-ব্যত্যয় দেখায়, রাজস্ব ০।
+- flag হওয়া result "➕ Finding" চেপে চূড়ান্ত রিপোর্টে নেওয়া যায় (ডুপ্লিকেট বাদ)। **দ্বৈত গণনা এড়াতে** সংখ্যাগত উপমোট নিজে থেকে চূড়ান্ত রাজস্ব-মোটে যোগ হয় না — শুধু গৃহীত Finding-ই যোগ হয়।
+- সব হিসাব সার্ভারে (`src/checks/numeric.js`), তাই testable ও রিপোর্টে (Word/Excel/PDF) অন্তর্ভুক্ত।
 
 ## রিইউজ কীভাবে কাজ করে
 
@@ -74,8 +92,8 @@ audits/                           প্রতিটি অডিটের ক�
 
 ## রোডম্যাপ
 
-- **Phase 1 (এই সংস্করণ):** নথি + OCR হুক + checklist খসড়া + Working Paper/Note Sheet/Final Report + ড্যাশবোর্ড। ✅
-- **Phase 2:** নলেজ বেস RAG + সত্যিকার AI বিশ্লেষণ (ollama/claude) + Evidence-এ পৃষ্ঠা-লেভেল লিংক।
+- **Phase 1 (এই সংস্করণ):** নথি + OCR হুক + checklist খসড়া + সংখ্যাগত auto-check + Working Paper/Note Sheet/Final Report + ড্যাশবোর্ড। ✅
+- **Phase 2:** নলেজ বেস RAG + সত্যিকার AI বিশ্লেষণ (ollama/claude) + Evidence-এ পৃষ্ঠা-লেভেল লিংক + OCR টেক্সট থেকে সংখ্যা auto-extract।
 - **Phase 3:** বাকি ৪টি মডিউল (প্রচ্ছন্ন, পোশাক, VAT limited, VAT proprietorship)।
 - **Phase 4:** টেমপ্লেট লাইব্রেরি + আগের অডিট থেকে "clone"।
 

@@ -11,7 +11,25 @@ const xml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 // ---------------- Word (.doc via HTML) ----------------
 // Word HTML-ভিত্তিক .doc নিখুঁতভাবে খোলে; বাংলা ও টেবিল সংরক্ষিত থাকে।
 
-export function toWordDoc({ audit, module, findings, documents, workingPaper }) {
+const SEV_LABEL = { high: "গুরুতর", medium: "মাঝারি", low: "স্বাভাবিক" };
+
+/** সংখ্যাগত auto-check → Word টেবিল HTML (computed rows only) */
+function numericWordTable(numeric) {
+  const results = (numeric?.results ?? []).filter((r) => r.status === "flag" || r.status === "ok");
+  if (!results.length) return "";
+  const subtotal = results.filter((r) => r.status === "flag").reduce((s, r) => s + Number(r.revenueImplication || 0), 0);
+  const rows = results.map((r) => {
+    const status = r.status === "flag" ? `⚠ ${SEV_LABEL[r.severity] ?? r.severity}` : "✓ ব্যত্যয় নেই";
+    const disc = r.status === "flag" ? `${bdt(r.discrepancy)} ${xml(r.unit ?? "")}`.trim() : "—";
+    return `<tr><td>${xml(r.title)}</td><td>${xml(status)}</td><td>${disc}</td><td style="text-align:right">${bdt(r.revenueImplication || 0)}</td></tr>`;
+  }).join("");
+  return `<h2>সংখ্যাগত যাচাই (Auto-check)</h2>
+  <table><thead><tr><th>Check</th><th>ফলাফল</th><th>ব্যত্যয়</th><th>রাজস্ব (BDT)</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <p><b>সংখ্যাগত যাচাইয়ে উপমোট: BDT ${bdt(subtotal)}</b> <i>(Finding হিসেবে গৃহীত হলে তবেই চূড়ান্ত মোটে যোগ হয়)</i></p>`;
+}
+
+export function toWordDoc({ audit, module, findings, documents, workingPaper, numeric }) {
   const rows = findings.map((f, i) => {
     const ref = f.legalRef ? resolveLegalRef(f.legalRef)?.citation ?? f.legalRef : "—";
     return `<tr>
@@ -48,6 +66,7 @@ export function toWordDoc({ audit, module, findings, documents, workingPaper }) 
   <p>${xml(audit.institution || "প্রতিষ্ঠানটি")} একটি বন্ড সুবিধাভোগী প্রতিষ্ঠান। উক্ত প্রতিষ্ঠানের বন্ড কার্যক্রম নিরীক্ষা করা হয়। সংগৃহীত নথি: ${documents.length}টি।</p>
   <h2>Working Paper সারাংশ</h2>
   ${wpSections}
+  ${numericWordTable(numeric)}
   <h2>পর্যবেক্ষণসমূহ (Findings)</h2>
   <table><thead><tr><th>#</th><th>Area</th><th>পর্যবেক্ষণ</th><th>আইন</th><th>রাজস্ব (BDT)</th></tr></thead>
   <tbody>${rows || `<tr><td colspan="5">কোনো finding নেই।</td></tr>`}</tbody></table>
@@ -65,8 +84,8 @@ export function toPrintablePdfHtml(ctx) {
 
 // ---------------- Excel (.xlsx, zero-dependency) ----------------
 
-/** findings + summary → xlsx Buffer */
-export function toXlsx({ audit, module, findings }) {
+/** findings + numeric + summary → xlsx Buffer */
+export function toXlsx({ audit, module, findings, numeric }) {
   const total = findings.reduce((s, f) => s + Number(f.revenueImplication || 0), 0);
 
   const headerRow = ["#", "Area", "পর্যবেক্ষণ", "আইন", "Severity", "রাজস্ব (BDT)"];
@@ -83,10 +102,29 @@ export function toXlsx({ audit, module, findings }) {
     ["মডিউল", module.title],
     ["নিরীক্ষাকাল", audit.period || ""],
     ["নিরীক্ষক", audit.auditor || ""],
-    ["মোট রাজস্ব প্রভাব (BDT)", total],
+    ["মোট রাজস্ব প্রভাব (গৃহীত Findings) (BDT)", total],
     [],
   ];
-  const rows = [...metaRows, headerRow, ...dataRows];
+
+  const numResults = (numeric?.results ?? []).filter((r) => r.status === "flag" || r.status === "ok");
+  const numRows = [];
+  if (numResults.length) {
+    const subtotal = numResults.filter((r) => r.status === "flag").reduce((s, r) => s + Number(r.revenueImplication || 0), 0);
+    numRows.push([], ["সংখ্যাগত যাচাই (Auto-check)"]);
+    numRows.push(["Check", "ফলাফল", "ব্যত্যয়", "একক", "রাজস্ব (BDT)"]);
+    for (const r of numResults) {
+      numRows.push([
+        r.title,
+        r.status === "flag" ? `flag/${r.severity}` : "ok",
+        r.status === "flag" ? Number(r.discrepancy || 0) : "",
+        r.status === "flag" ? (r.unit || "") : "",
+        Number(r.revenueImplication || 0),
+      ]);
+    }
+    numRows.push(["সংখ্যাগত উপমোট (BDT)", "", "", "", subtotal]);
+  }
+
+  const rows = [...metaRows, headerRow, ...dataRows, ...numRows];
   return buildXlsx(rows);
 }
 

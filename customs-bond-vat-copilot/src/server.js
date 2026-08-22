@@ -12,6 +12,7 @@ import * as store from "./storage.js";
 import { getModule, listModules } from "./modules/index.js";
 import { isOcrAvailable, recognize } from "./ocr.js";
 import { listProviders, draftFindings } from "./ai/index.js";
+import { runNumericChecks, resultToFinding } from "./checks/numeric.js";
 import { buildReport } from "./report/generate.js";
 import { toWordDoc, toXlsx, toPrintablePdfHtml } from "./report/export.js";
 import { getSettings, saveSettings, redactSettings } from "./settings.js";
@@ -129,6 +130,42 @@ const routes = [
     }
   }],
 
+  // সংখ্যাগত auto-check
+  ["GET", /^\/api\/audits\/([^/]+)\/numeric$/, async ([id], _req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const saved = await store.getNumeric(id);
+    json(res, 200, { specs: module.numericChecks ?? [], inputs: saved.inputs, results: saved.results, summary: saved.summary });
+  }],
+  ["POST", /^\/api\/audits\/([^/]+)\/numeric$/, async ([id], req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const { inputs } = await readBody(req);
+    const { results, summary } = runNumericChecks(module, inputs ?? {});
+    await store.saveNumeric(id, { inputs: inputs ?? {}, results, summary });
+    json(res, 200, { results, summary });
+  }],
+  // flag হওয়া numeric result → finding (ডুপ্লিকেট এড়াতে একই title-এর numeric finding থাকলে skip)
+  ["POST", /^\/api\/audits\/([^/]+)\/numeric\/to-findings$/, async ([id], req, res) => {
+    const { checkIds } = await readBody(req);
+    const saved = await store.getNumeric(id);
+    const wanted = Array.isArray(checkIds) && checkIds.length ? new Set(checkIds) : null;
+    const existing = await store.listFindings(id);
+    const seen = new Set(existing.filter((f) => f.source === "numeric").map((f) => f.title));
+    let added = 0, skipped = 0;
+    for (const r of saved.results ?? []) {
+      if (r.status !== "flag") continue;
+      if (wanted && !wanted.has(r.id)) continue;
+      if (seen.has(r.title)) { skipped++; continue; }
+      await store.addFinding(id, resultToFinding(r));
+      seen.add(r.title);
+      added++;
+    }
+    json(res, 200, { added, skipped });
+  }],
+
   ["GET", /^\/api\/audits\/([^/]+)\/working-paper$/, async ([id], _req, res) => json(res, 200, await store.getWorkingPaper(id))],
   ["PUT", /^\/api\/audits\/([^/]+)\/working-paper$/, async ([id], req, res) => json(res, 200, await store.saveWorkingPaper(id, await readBody(req)))],
 
@@ -136,13 +173,14 @@ const routes = [
     const audit = await store.getAudit(id);
     const module = getModule(audit?.moduleId);
     if (!module) return json(res, 404, { error: "not found" });
-    const [findings, documents, workingPaper] = await Promise.all([
+    const [findings, documents, workingPaper, numeric] = await Promise.all([
       store.listFindings(id),
       store.listDocuments(id),
       store.getWorkingPaper(id),
+      store.getNumeric(id),
     ]);
     try {
-      const markdown = buildReport(kind, { audit, module, findings, documents, workingPaper });
+      const markdown = buildReport(kind, { audit, module, findings, documents, workingPaper, numeric });
       json(res, 200, { kind, markdown });
     } catch (err) {
       json(res, 400, { error: String(err?.message ?? err) });
@@ -153,12 +191,13 @@ const routes = [
     const audit = await store.getAudit(id);
     const module = getModule(audit?.moduleId);
     if (!module) return json(res, 404, { error: "not found" });
-    const [findings, documents, workingPaper] = await Promise.all([
+    const [findings, documents, workingPaper, numeric] = await Promise.all([
       store.listFindings(id),
       store.listDocuments(id),
       store.getWorkingPaper(id),
+      store.getNumeric(id),
     ]);
-    const ctx = { audit, module, findings, documents, workingPaper };
+    const ctx = { audit, module, findings, documents, workingPaper, numeric };
     const slug = (audit.institution || "audit").replace(/[^\wঀ-৿]+/g, "_");
 
     if (format === "excel") {

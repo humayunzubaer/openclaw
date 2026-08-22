@@ -42,6 +42,7 @@ const paths = (id) => ({
   findings: path.join(auditDir(id), "findings.json"),
   evidence: path.join(auditDir(id), "evidence.json"),
   workingPaper: path.join(auditDir(id), "working-paper.json"),
+  numeric: path.join(auditDir(id), "numeric.json"),
   reportDir: path.join(auditDir(id), "report"),
 });
 
@@ -152,6 +153,7 @@ export async function addFinding(auditId, finding) {
     legalRef: finding.legalRef ?? null,
     revenueImplication: finding.revenueImplication ?? 0,
     severity: finding.severity ?? "medium", // low | medium | high
+    source: finding.source ?? "manual", // manual | numeric | ai
     evidenceDocIds: finding.evidenceDocIds ?? [],
     createdAt: new Date().toISOString(),
   };
@@ -184,6 +186,18 @@ export async function getWorkingPaper(auditId) {
 
 export async function saveWorkingPaper(auditId, data) {
   await writeJson(paths(auditId).workingPaper, data);
+  return data;
+}
+
+// ---- Numeric auto-check (inputs + computed results) ----
+
+export async function getNumeric(auditId) {
+  return readJson(paths(auditId).numeric, { inputs: {}, results: [], summary: null, updatedAt: null });
+}
+
+export async function saveNumeric(auditId, { inputs, results, summary }) {
+  const data = { inputs: inputs ?? {}, results: results ?? [], summary: summary ?? null, updatedAt: new Date().toISOString() };
+  await writeJson(paths(auditId).numeric, data);
   return data;
 }
 

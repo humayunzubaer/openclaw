@@ -46,6 +46,76 @@ export const bondDirectNonGarments = {
     { id: "revenue-loss", area: "রাজস্ব প্রভাব", question: "উপরের অসঙ্গতির ফলে ফাঁকি/পরিহারযোগ্য শুল্ক-কর কত? (ঘাটতি × প্রযোজ্য শুল্ক-কর)", legalRef: "customs-act-156" },
   ]),
 
+  // সংখ্যাগত auto-check: auditor সংখ্যা বসাবেন, ইঞ্জিন (src/checks/numeric.js)
+  // ঘাটতি ও রাজস্ব হিসাব করবে। এখানে শুধু serializable ইনপুট-স্পেক (compute নয়)।
+  // inputs[].optional === true মানে না দিলে 0 ধরা হয় (সাধারণত duty/rate ফিল্ড)।
+  numericChecks: [
+    {
+      id: "num-entitlement",
+      title: "Entitlement অতিক্রম (আমদানি vs অনুমোদিত)",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "bwl-rules",
+      formula: "অতিরিক্ত = আমদানি − অনুমোদিত entitlement; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "approvedEntitlement", label: "অনুমোদিত annual entitlement / UP", unit: "একক" },
+        { key: "imported", label: "প্রকৃত আমদানি", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-coefficient",
+      title: "Coefficient অনুযায়ী অতিরিক্ত ব্যবহার",
+      area: "ব্যবহার (Consumption)",
+      legalRef: "bwl-rules",
+      formula: "অনুমোদিত = উৎপাদন × coefficient; অতিরিক্ত = প্রকৃত ব্যবহার − অনুমোদিত; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "finishedProduced", label: "উৎপাদিত পণ্য (Finished)", unit: "একক" },
+        { key: "coeffPerUnit", label: "অনুমোদিত coefficient (কাঁচামাল/একক পণ্য)", unit: "" },
+        { key: "actualConsumed", label: "প্রকৃত কাঁচামাল ব্যবহার", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-material-balance",
+      title: "কাঁচামাল Reconciliation (অহিসাবকৃত)",
+      area: "স্টক ও উদ্বৃত্ত",
+      legalRef: "customs-act-156",
+      formula: "অহিসাবকৃত = (Opening+Import) − (রপ্তানি-ব্যবহার + অপচয় + Closing); ঘাটতি × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "openingStock", label: "প্রারম্ভিক মজুদ (Opening)", unit: "একক" },
+        { key: "imported", label: "আমদানি (Import)", unit: "একক" },
+        { key: "consumedForExport", label: "রপ্তানিতে ব্যবহৃত কাঁচামাল", unit: "একক" },
+        { key: "wastageAllowedQty", label: "স্বীকৃত অপচয় পরিমাণ", unit: "একক", optional: true },
+        { key: "closingStock", label: "সমাপনী মজুদ (Closing)", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-wastage",
+      title: "অপচয় (Wastage) অনুমোদিত হারের বেশি",
+      area: "অপচয় (Wastage)",
+      legalRef: "bwl-rules",
+      formula: "অনুমোদিত অপচয় = ব্যবহৃত × হার%; অতিরিক্ত = দাবিকৃত − অনুমোদিত; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "consumedRaw", label: "ব্যবহৃত কাঁচামাল", unit: "একক" },
+        { key: "allowedWastagePct", label: "অনুমোদিত অপচয় হার", unit: "%" },
+        { key: "declaredWastageQty", label: "দাবিকৃত অপচয়", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-overstay",
+      title: "মেয়াদোত্তীর্ণ কাঁচামাল (Overstay)",
+      area: "স্টক ও উদ্বৃত্ত",
+      legalRef: "bwl-rules",
+      formula: "রাজস্ব = মেয়াদোত্তীর্ণ পরিমাণ × শুল্ক-কর/একক (২ বছরের বেশি বন্ডে থাকা কাঁচামাল)",
+      inputs: [
+        { key: "overstayQty", label: "মেয়াদোত্তীর্ণ (>২ বছর) পরিমাণ", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+  ],
+
   // Working Paper-এর সেকশন কাঠামো (রিপোর্টেও এই ক্রম অনুসৃত হয়)
   workingPaperSections: [
     "প্রতিষ্ঠান পরিচিতি ও বন্ড লাইসেন্স তথ্য",
