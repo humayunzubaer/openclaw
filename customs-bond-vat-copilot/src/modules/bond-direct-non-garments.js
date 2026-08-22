@@ -63,6 +63,18 @@ export const bondDirectNonGarments = {
       ],
     },
     {
+      id: "num-be-register",
+      title: "Bill of Entry vs বন্ড রেজিস্টার (রেকর্ড মিল)",
+      area: "আমদানি বনাম রেকর্ড",
+      legalRef: "bwl-rules",
+      formula: "পার্থক্য = B/E আমদানি − রেজিস্টারে লিপিবদ্ধ; কম রেকর্ড × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "beQty", label: "Bill of Entry অনুযায়ী আমদানি", unit: "একক" },
+        { key: "registerQty", label: "বন্ড রেজিস্টারে লিপিবদ্ধ", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
       id: "num-coefficient",
       title: "Coefficient অনুযায়ী অতিরিক্ত ব্যবহার",
       area: "ব্যবহার (Consumption)",
@@ -72,6 +84,18 @@ export const bondDirectNonGarments = {
         { key: "finishedProduced", label: "উৎপাদিত পণ্য (Finished)", unit: "একক" },
         { key: "coeffPerUnit", label: "অনুমোদিত coefficient (কাঁচামাল/একক পণ্য)", unit: "" },
         { key: "actualConsumed", label: "প্রকৃত কাঁচামাল ব্যবহার", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-ud-export",
+      title: "UD দাবি vs প্রকৃত রপ্তানি (সমন্বয়)",
+      area: "রপ্তানি সমন্বয়",
+      legalRef: "customs-act-21",
+      formula: "অসমর্থিত = UD দাবিকৃত ব্যবহার − রপ্তানি-সমর্থিত ব্যবহার; অসমর্থিত × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "udClaimedRaw", label: "UD-তে দাবিকৃত কাঁচামাল ব্যবহার", unit: "একক" },
+        { key: "exportBackedRaw", label: "প্রকৃত রপ্তানি-সমর্থিত ব্যবহার", unit: "একক" },
         { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
       ],
     },

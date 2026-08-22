@@ -27,6 +27,51 @@ test("entitlement within limit → ok, no revenue", () => {
   assert.equal(r.revenueImplication, 0);
 });
 
+test("B/E vs register: under-recording → diff × duty, high", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-be-register": { beQty: 1000, registerQty: 850, dutyPerUnit: 30 },
+  });
+  const r = byId(results, "num-be-register");
+  assert.equal(r.status, "flag");
+  assert.equal(r.severity, "high");
+  assert.equal(r.discrepancy, 150);
+  assert.equal(r.revenueImplication, 4500);
+});
+
+test("B/E vs register: over-recording → medium flag, no revenue", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-be-register": { beQty: 800, registerQty: 900, dutyPerUnit: 30 },
+  });
+  const r = byId(results, "num-be-register");
+  assert.equal(r.status, "flag");
+  assert.equal(r.severity, "medium");
+  assert.equal(r.revenueImplication, 0);
+});
+
+test("B/E vs register: exact match → ok", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-be-register": { beQty: 900, registerQty: 900, dutyPerUnit: 30 },
+  });
+  assert.equal(byId(results, "num-be-register").status, "ok");
+});
+
+test("UD vs export: unsupported consumption → × duty, high", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-ud-export": { udClaimedRaw: 500, exportBackedRaw: 420, dutyPerRawUnit: 15 },
+  });
+  const r = byId(results, "num-ud-export");
+  assert.equal(r.status, "flag");
+  assert.equal(r.discrepancy, 80);
+  assert.equal(r.revenueImplication, 1200);
+});
+
+test("UD vs export: fully supported → ok", () => {
+  const { results } = runNumericChecks(mod, {
+    "num-ud-export": { udClaimedRaw: 400, exportBackedRaw: 400, dutyPerRawUnit: 15 },
+  });
+  assert.equal(byId(results, "num-ud-export").status, "ok");
+});
+
 test("coefficient overconsumption", () => {
   const { results } = runNumericChecks(mod, {
     "num-coefficient": { finishedProduced: 100, coeffPerUnit: 2, actualConsumed: 250, dutyPerRawUnit: 10 },
