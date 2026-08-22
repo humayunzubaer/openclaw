@@ -1,0 +1,31 @@
+OPENCLAW SCANNER — PROGRESS LOG
+================================
+
+কোথায় আছি (setup):
+- [x] Android Studio ইনস্টল
+- [x] SDK Manager: Android 16, NDK 27.3.x, CMake 3.22.1, Platform-Tools, Command-line Tools
+- [ ] Flutter SDK ইনস্টল (C:\src\flutter) + PATH-এ যোগ  <-- এখানে আটকে আছি
+- [ ] flutter doctor সব ✓
+- [ ] ফোন USB debugging + flutter devices
+- [ ] flutter create + প্রথম অ্যাপ ফোনে রান (Milestone 1)
+
+কোড bundle (সব batch এখন repo-তে integrated — openclaw_scanner/):
+- [x] Batch 1 — config + app glue
+- [x] Batch 2 — database (drift) + native bindings/facade
+- [x] Batch 3 — OCR pool + Magic Eraser worker + AppServices
+- [x] Batch 4 — editor (Bengali text edit + mask) + auto-analysis
+- [x] Batch 5 — export (Word/Excel/JPG) + PDF
+- [x] Batch 6 — native C++ core + CMake + iOS podspec/build script
+
+Repo scaffolding যোগ হয়েছে:
+- [x] .gitignore (Flutter — generated *.g.dart, build/, third_party/, model/font binaries)
+- [x] analysis_options.yaml (flutter_lints)
+- [x] assets/{tessdata,models,fonts}/ placeholder + assets/README.md
+
+কোডে যা এখনো TODO (external lib দরকার — details NEXT_STEPS.md-এ):
+- [ ] native/src/sc_pdf.cpp — PDFium link করে সব function পূরণ
+- [ ] native/src/sc_analyze.cpp — finger-seg ONNX session load + auto_analyze compose
+
+পরের কাজ (আপনার machine-এ): NEXT_STEPS.md দেখুন।
+Flutter SDK download → C:\src\flutter-এ extract → PATH-এ C:\src\flutter\bin যোগ →
+নতুন PowerShell-এ flutter --version → flutter create overlay → pub get → codegen → run।
