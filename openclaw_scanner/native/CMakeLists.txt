@@ -27,12 +27,15 @@ if(ANDROID)
   set_target_properties(leptonica PROPERTIES IMPORTED_LOCATION ${TP}/leptonica/lib/${ANDROID_ABI}/libleptonica.so)
   add_library(onnxruntime SHARED IMPORTED)
   set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION ${TP}/onnxruntime/lib/${ANDROID_ABI}/libonnxruntime.so)
+  add_library(pdfium SHARED IMPORTED)
+  set_target_properties(pdfium PROPERTIES IMPORTED_LOCATION ${TP}/pdfium/lib/${ANDROID_ABI}/libpdfium.so)
 
   add_library(scanner_core SHARED ${SC_SOURCES})
   target_include_directories(scanner_core PRIVATE
     ${CMAKE_SOURCE_DIR}/include ${DART_INCLUDE}
-    ${TP}/tesseract/include ${TP}/leptonica/include ${TP}/onnxruntime/include)
-  target_link_libraries(scanner_core ${OpenCV_LIBS} tesseract leptonica onnxruntime android log)
+    ${TP}/tesseract/include ${TP}/leptonica/include ${TP}/onnxruntime/include
+    ${TP}/pdfium/include)
+  target_link_libraries(scanner_core ${OpenCV_LIBS} tesseract leptonica onnxruntime pdfium android log)
   target_link_options(scanner_core PRIVATE $<$<CONFIG:Release>:-Wl,--strip-all>)
 endif()
 
@@ -44,5 +47,6 @@ if(APPLE)
     ${CMAKE_SOURCE_DIR}/include ${DART_INCLUDE}
     ${TP}/ios/opencv2.xcframework/Headers
     ${TP}/ios/onnxruntime.xcframework/Headers
-    ${TP}/ios/tesseract/include ${TP}/ios/leptonica/include)
+    ${TP}/ios/tesseract/include ${TP}/ios/leptonica/include
+    ${TP}/ios/pdfium.xcframework/Headers)
 endif()

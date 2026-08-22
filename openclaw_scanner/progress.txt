@@ -23,7 +23,7 @@ Repo scaffolding যোগ হয়েছে:
 - [x] assets/{tessdata,models,fonts}/ placeholder + assets/README.md
 
 কোডে যা এখনো TODO (external lib দরকার — details NEXT_STEPS.md-এ):
-- [ ] native/src/sc_pdf.cpp — PDFium link করে সব function পূরণ
+- [x] native/src/sc_pdf.cpp — PDFium দিয়ে সব function implemented (prebuilt libpdfium দিলেই চলবে)
 - [ ] native/src/sc_analyze.cpp — finger-seg ONNX session load + auto_analyze compose
 
 পরের কাজ (আপনার machine-এ): NEXT_STEPS.md দেখুন।

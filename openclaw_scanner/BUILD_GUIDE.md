@@ -17,6 +17,7 @@ flutter pub get
 - opencv (Android SDK) — `opencv/sdk/native/jni`
 - tesseract, leptonica — `.so` per ABI (`lib/<abi>/`)
 - onnxruntime — `libonnxruntime.so` per ABI + headers
+- pdfium — `libpdfium.so` per ABI (`pdfium/lib/<abi>/`) + headers (`pdfium/include/` containing `fpdfview.h`, `fpdf_edit.h`, `fpdf_ppo.h`, `fpdf_save.h`, `fpdf_text.h`)
 - dart — Flutter SDK-এর `dart-sdk/include` (dart_api_dl.c/h)
 
 ## ৩. AI model + font (assets-এ রাখুন)
@@ -48,5 +49,6 @@ flutter build ipa --release
 - iOS `Info.plist`: `NSCameraUsageDescription`
 
 ## ⚠️ নোট
-- `sc_pdf.cpp` ও `sc_analyze.cpp`-এ কিছু অংশ TODO — PDFium/finger-ONNX link করে পূরণ করতে হবে।
-- "সহজ পথে" আগে ক্যামেরা+লাইব্রেরি চালান; OCR/Eraser-এর জন্য native lib লাগবে।
+- `sc_pdf.cpp` এখন সম্পূর্ণ implemented (PDFium) — শুধু prebuilt `libpdfium` + headers `third_party/pdfium/`-তে দিতে হবে।
+- `sc_analyze.cpp`-এ finger-seg (ONNX) অংশ এখনো TODO; shadow/stray classical অংশ চলে।
+- "সহজ পথে" আগে ক্যামেরা+লাইব্রেরি চালান; OCR/Eraser/PDF-এর জন্য native lib লাগবে।

@@ -31,7 +31,8 @@ flutter pub get
 ## 3. Drop in the user-supplied binaries
 
 - **Native prebuilt libs** → `native/third_party/` (OpenCV, Tesseract,
-  Leptonica, ONNX Runtime; Dart API headers from the Flutter SDK).
+  Leptonica, ONNX Runtime, **PDFium** — `libpdfium` + headers under
+  `third_party/pdfium/`; Dart API headers from the Flutter SDK).
   See `BUILD_GUIDE.md` §2.
 - **AI models + fonts** → `assets/` (see `assets/README.md`):
   `tessdata/ben.traineddata`, `models/lama_fp16.onnx`,
@@ -60,16 +61,18 @@ flutter build apk --release    # Android release
 
 ## Known code TODOs (need external libs before they do anything)
 
-Both are stubbed so `libscanner_core` still links; they return an error until
-implemented. Neither blocks camera capture, the library, OCR, or the editor.
-
-- `native/src/sc_pdf.cpp` — every `sc_pdf_*` is a defined stub. Link **PDFium**
-  and fill the documented `FPDF_*` call sequences (create/import/save,
-  image recompress, invisible text layer).
+- `native/src/sc_pdf.cpp` — **implemented** against the PDFium C API
+  (page count, images→PDF with aspect-fit, page extract/combine, image
+  recompress to a target DPI/quality, and an invisible CID-TrueType Bengali
+  text layer for searchable PDFs). It needs the prebuilt **PDFium** lib +
+  headers under `third_party/pdfium/` (wired in `native/CMakeLists.txt`);
+  nothing else to write.
 - `native/src/sc_analyze.cpp` — shadow & stray-mark detection and contour
   extraction are implemented; `sc_handseg_create` / `sc_auto_analyze` still
   need the **finger-segmentation ONNX** session (mirror `sc_inpaint.cpp`) and
-  the shadow+finger+stray merge into one JSON.
+  the shadow+finger+stray merge into one JSON. This is the only remaining
+  native stub; it doesn't block camera capture, the library, OCR, the editor,
+  or PDF.
 
 ## "সহজ পথে" reminder
 
