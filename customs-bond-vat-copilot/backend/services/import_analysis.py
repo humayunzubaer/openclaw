@@ -568,11 +568,49 @@ class UtilizationRecord:
 
 
 @dataclass
+class PostPeriodRecord:
+    """
+    ★ দাবি ৫ — নিরীক্ষা মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি
+
+    নিরীক্ষা মেয়াদ (প্রাপ্যতার period_to) শেষ হইবার পর, নূতন প্রাপ্যতা/UP
+    অনুমোদনের পূর্বে, কোনো বৈধ প্রাপ্যতা বা প্রত্যয়নপত্র ব্যতীত যে আমদানি ও
+    স্থানীয় ক্রয় হয় — তাহার সম্পূর্ণ শুল্ক-কর দাবিযোগ্য।
+
+    আইনি ভিত্তি: এসআরও ২১৪-আইন/২০২৪ — বিধি ৫, ৯ ও ১২ লঙ্ঘন।
+    কর-উপাদান: আমদানিতে পূর্ণ BE (CD+RD+SD+VAT+AT+AIT); স্থানীয় ক্রয়ে ১৫%
+    উৎসে মূসক।
+    """
+    serial: int
+    source: str            # "আমদানি (IM-4/IM-7)" | "স্থানীয় ক্রয়"
+    hs_code: str
+    item_name: str
+    bill_count: int
+    bill_numbers: str
+    total_quantity: float
+    unit: str
+    total_value_usd: float
+    total_value_bdt: float
+    assessable_value_bdt: float
+    cd_demanded: float
+    rd_demanded: float
+    sd_demanded: float
+    vat_demanded: float
+    at_demanded: float
+    ait_demanded: float
+    total_revenue_impact: float
+    assessment_basis: str
+    period_window: str
+    legal_basis: str
+    remarks: str
+
+
+@dataclass
 class ImportAnalysisResult:
     """সম্পূর্ণ বিশ্লেষণ ফলাফল"""
     excess_records: list[ExcessRecord] = field(default_factory=list)
     cluster_excess_records: list[ClusterExcessRecord] = field(default_factory=list)
     unauthorized_records: list[UnauthorizedRecord] = field(default_factory=list)
+    post_period_records: list[PostPeriodRecord] = field(default_factory=list)
     machinery_records: list[MachineryRecord] = field(default_factory=list)
     bonding_records: list[BondingCapacityRecord] = field(default_factory=list)
     capacity_limit_records: list[CapacityLimitRecord] = field(default_factory=list)
@@ -616,6 +654,9 @@ class ImportAnalysisResult:
             ),
             "অননুমোদিত এইচএস কোড": pd.DataFrame(
                 [asdict(r) for r in self.unauthorized_records]
+            ),
+            "মেয়াদোত্তর আমদানি (দাবি ৫)": pd.DataFrame(
+                [asdict(r) for r in self.post_period_records]
             ),
             "বন্ডিং ক্যাপাসিটি": pd.DataFrame(
                 [asdict(r) for r in self.capacity_breach_records]
@@ -665,6 +706,7 @@ class ImportAnalysisEngine:
         warehouse_capacity_mt: float = 0.0,
         warehouse_dims: dict | None = None,
         ledger_events: list | None = None,
+        next_entitlement_date: date | None = None,
     ):
         self.entitlements = entitlements
         self.imports = imports
@@ -679,6 +721,10 @@ class ImportAnalysisEngine:
         self.warehouse_dims = warehouse_dims or {}
         # তফসিল-১ রেজিস্টার হইতে প্রাপ্ত ঘটনাবলি
         self.ledger_events = ledger_events or []
+        # ★ নূতন প্রাপ্যতা/UP অনুমোদনের তারিখ — মেয়াদোত্তর দাবির উর্ধ্বসীমা।
+        #   period_to-এর পর, এই তারিখের পূর্ব পর্যন্ত আমদানি = দাবি ৫।
+        #   None হইলে period_to-এর পরের সকল বিল দাবিতে ধরা হয় (সতর্কতাসহ)।
+        self.next_entitlement_date = next_entitlement_date
         # একক নিষ্কাশক
         self.unit_extractor = UnitExtractor()
         self.tolerance = tolerance
@@ -727,12 +773,19 @@ class ImportAnalysisEngine:
         # ধাপ ০: ★ আমদানি ফাইলটি সঠিক মেয়াদের কিনা যাচাই
         self._validate_period_coverage(result)
 
+        # ধাপ ০.৫: ★ মেয়াদোত্তর বিল পৃথক করা — এগুলো দাবি ৫-এ যাইবে, এবং
+        #   excess/অননুমোদিত/ক্যাপাসিটি হিসাব হইতে বাদ থাকিবে (দ্বৈত দাবি রোধ)।
+        post_period_imports = [r for r in self.imports if self._is_post_period(r)]
+        post_period_local = [r for r in self.local_purchases if self._is_post_period(r)]
+        period_imports = [r for r in self.imports if not self._is_post_period(r)]
+        period_local = [r for r in self.local_purchases if not self._is_post_period(r)]
+
         # ধাপ ১: প্রতিটি আমদানি সারি শ্রেণীবদ্ধ ও মিলকরণ
         matched_groups: dict[int, list[ImportRow]] = {}
         unmatched: list[ImportRow] = []
         machinery: list[ImportRow] = []
 
-        for imp in self.imports:
+        for imp in period_imports:
             name = imp.item_name or imp.commercial_name
 
             # --- ক) মেশিনারিজ? তাহলে পৃথক তালিকায় ---
@@ -792,7 +845,7 @@ class ImportAnalysisEngine:
 
         # ধাপ ২: স্থানীয় ক্রয়ও প্রাপ্যতার সাথে মেলাও (বন্ডিং ক্যাপাসিটির জন্য)
         local_groups: dict[int, list[ImportRow]] = {}
-        for lp in self.local_purchases:
+        for lp in period_local:
             lp.source_type = "local_purchase"
             if self.exclude_machinery and lp.is_machinery_item:
                 continue
@@ -825,6 +878,9 @@ class ImportAnalysisEngine:
 
         # ধাপ ৪: অননুমোদিত এইচএস কোড
         self._build_unauthorized(unmatched, result)
+
+        # ধাপ ৪.৫: ★ দাবি ৫ — মেয়াদোত্তর প্রাপ্যতা ব্যতীত আমদানি
+        self._build_post_period(post_period_imports, post_period_local, result)
 
         # ধাপ ৫: মেশিনারিজ তালিকা
         self._build_machinery(machinery, result)
@@ -905,6 +961,29 @@ class ImportAnalysisEngine:
             return False
         if ent.period_to and imp.bill_date > ent.period_to:
             return False
+        return True
+
+    # ------------------------------------------------------
+    def _audit_period_end(self) -> date | None:
+        """নিরীক্ষা মেয়াদের সমাপ্তি (প্রাপ্যতা শীটের period_to)"""
+        return next((e.period_to for e in self.entitlements if e.period_to), None)
+
+    def _is_post_period(self, row: ImportRow) -> bool:
+        """
+        ★ বিলটি মেয়াদোত্তর (দাবি ৫) কিনা।
+
+        সত্য যখন — বিল-তারিখ নিরীক্ষা মেয়াদের শেষ (period_to)-এর পরে, এবং
+        (নূতন প্রাপ্যতার তারিখ দেওয়া থাকিলে) তাহার পূর্বে। মেয়াদ-পূর্ব বিল
+        (period_from-এর আগে) মেয়াদোত্তর নহে — উহা পূর্ববর্তী নিরীক্ষার আওতাধীন।
+        """
+        p_to = self._audit_period_end()
+        if not p_to or not row.bill_date:
+            return False
+        if row.bill_date <= p_to:
+            return False
+        nxt = self.next_entitlement_date
+        if nxt and row.bill_date >= nxt:
+            return False   # নূতন প্রাপ্যতায় আচ্ছাদিত — দাবি ৫-এর বাইরে
         return True
 
     # ------------------------------------------------------
@@ -1159,6 +1238,105 @@ class ImportAnalysisEngine:
                 nearest_score=round(near_score, 3),
                 remarks=remarks,
             ))
+
+    # ------------------------------------------------------
+    POST_PERIOD_LEGAL_BASIS = (
+        "এসআরও ২১৪-আইন/২০২৪/৬৬/কাস্টমস — বিধি ৫, ৯ ও ১২ "
+        "(নিরীক্ষা মেয়াদ সমাপনান্তে প্রাপ্যতা/প্রত্যয়নপত্র ব্যতীত আমদানি)"
+    )
+
+    def _build_post_period(
+        self,
+        imports: list[ImportRow],
+        local_purchases: list[ImportRow],
+        result: ImportAnalysisResult,
+    ):
+        """
+        ★ দাবি ৫ — নিরীক্ষা মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি
+
+        period_to-এর পর (এবং নূতন প্রাপ্যতার তারিখ থাকিলে তাহার পূর্বে)
+        যে সকল আমদানি ও স্থানীয় ক্রয় কোনো বৈধ প্রাপ্যতা/প্রত্যয়নপত্র ছাড়াই
+        হইয়াছে — তাহার সম্পূর্ণ শুল্ক-কর দাবিযোগ্য।
+        """
+        rows = list(imports) + list(local_purchases)
+        if not rows:
+            return
+
+        p_to = self._audit_period_end()
+        nxt = self.next_entitlement_date
+        window = (
+            (f"{p_to.strftime('%d.%m.%Y')}-এর পর" if p_to else "মেয়াদ সমাপ্তির পর")
+            + (f" — {nxt.strftime('%d.%m.%Y')}-এর পূর্ব"
+               if nxt else " (নূতন প্রাপ্যতার তারিখ পর্যন্ত)")
+        )
+
+        if nxt is None:
+            result.warnings.append(
+                "⚠ নূতন প্রাপ্যতা/UP অনুমোদনের তারিখ প্রদান করা হয় নাই — "
+                "নিরীক্ষা মেয়াদ (period_to) সমাপ্তির পরের সকল বিল 'দাবি ৫ — "
+                "মেয়াদোত্তর'-এ অন্তর্ভুক্ত হইয়াছে। বৈধ নূতন প্রাপ্যতায় আচ্ছাদিত "
+                "বিল থাকিলে অনুগ্রহ করে নূতন প্রাপ্যতার তারিখ প্রদান করুন।"
+            )
+
+        # উৎস ও পণ্য অনুসারে একত্রীকরণ
+        groups: dict[tuple, list[ImportRow]] = {}
+        for r in rows:
+            is_local = getattr(r, "source_type", "import") == "local_purchase"
+            src = "স্থানীয় ক্রয়" if is_local else "আমদানি (IM-4/IM-7)"
+            key = (src, r.hs_code or "", normalize(r.item_name)[:60])
+            groups.setdefault(key, []).append(r)
+
+        serial = 0
+        for (src, hs, _), grows in sorted(
+            groups.items(), key=lambda kv: -sum(x.value_usd or 0 for x in kv[1])
+        ):
+            serial += 1
+            qty = sum(r.quantity or 0 for r in grows)
+            val_usd = sum(r.value_usd or 0 for r in grows)
+            val_bdt = sum(r.value_bdt or 0 for r in grows)
+
+            # ★ সম্পূর্ণ শুল্কায়ন — আমদানিতে পূর্ণ BE, স্থানীয় ক্রয়ে ১৫% উৎসে মূসক
+            tb = assess_full(grows)
+
+            remarks = (
+                f"নিরীক্ষা মেয়াদ ({p_to.strftime('%d.%m.%Y') if p_to else '—'}) "
+                f"সমাপ্তির পর, নূতন প্রাপ্যতা অনুমোদনের পূর্বে, কোনো বৈধ প্রাপ্যতা "
+                f"বা প্রত্যয়নপত্র ব্যতীত {src} বাবদ HS {hs or '—'} এর বিপরীতে "
+                f"{len(grows)}টি বিলে {qty:,.3f} {grows[0].unit} সংগ্রহ করা "
+                f"হইয়াছে (সময়কাল: {window})। বন্ড সুবিধায় শুল্কমুক্ত সংগ্রহের "
+                f"বৈধতা না থাকায় সম্পূর্ণ শুল্ক-কর দাবিযোগ্য। "
+                + tb.calculation_note + " " + BANK_GUARANTEE_NOTE
+            )
+
+            result.post_period_records.append(PostPeriodRecord(
+                serial=serial,
+                source=src,
+                hs_code=hs,
+                item_name=", ".join(sorted({(r.item_name or "")[:60] for r in grows}))[:250],
+                bill_count=len(grows),
+                bill_numbers=", ".join(r.bill_number for r in grows),
+                total_quantity=round(qty, 3),
+                unit=grows[0].unit or "",
+                total_value_usd=round(val_usd, 2),
+                total_value_bdt=round(val_bdt, 2),
+                assessable_value_bdt=tb.assessable_value,
+                cd_demanded=tb.cd,
+                rd_demanded=tb.rd,
+                sd_demanded=tb.sd,
+                vat_demanded=tb.vat,
+                at_demanded=tb.at,
+                ait_demanded=tb.ait,
+                total_revenue_impact=tb.total,
+                assessment_basis=tb.basis,
+                period_window=window,
+                legal_basis=self.POST_PERIOD_LEGAL_BASIS,
+                remarks=remarks,
+            ))
+
+        logger.info(
+            f"মেয়াদোত্তর দাবি (দাবি ৫) — {len(result.post_period_records)}টি রেকর্ড, "
+            f"মোট দাবি {sum(r.total_revenue_impact for r in result.post_period_records):,.0f} টাকা"
+        )
 
     # ------------------------------------------------------
     def _build_cluster_excess(
@@ -1664,6 +1842,7 @@ class ImportAnalysisEngine:
         """সারসংক্ষেপ পরিসংখ্যান"""
         ex = result.excess_records
         un = result.unauthorized_records
+        pp = result.post_period_records
         ut = result.utilization_records
         cx = result.cluster_excess_records
         cl = result.capacity_limit_records
@@ -1735,12 +1914,17 @@ class ImportAnalysisEngine:
             "দাবি ৪ — উৎপাদন ক্ষমতার ৮০% সীমা লঙ্ঘন [বিধি ১১(১)] (BDT)": round(
                 sum(r.total_revenue_impact for r in cl), 2
             ),
+            "দাবি ৫ — মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি (BDT)": round(
+                sum(r.total_revenue_impact for r in pp), 2
+            ),
+            "মেয়াদোত্তর দাবি-রেকর্ড সংখ্যা": len(pp),
             "সর্বমোট রাজস্ব দাবি (BDT)": round(
                 sum(r.total_revenue_impact for r in un)
                 + sum(r.total_revenue_impact for r in ex)
                 + sum(r.total_revenue_impact for r in cx)
                 + sum(r.total_revenue_impact for r in breaches)
-                + sum(r.total_revenue_impact for r in cl), 2
+                + sum(r.total_revenue_impact for r in cl)
+                + sum(r.total_revenue_impact for r in pp), 2
             ),
             "ইহার মধ্যে উৎসে মূসক (স্থানীয় ক্রয়) (BDT)": round(
                 sum(r.source_vat_demanded for r in cx), 2
@@ -1752,5 +1936,6 @@ __all__ = [
     "ImportAnalysisEngine", "ImportAnalysisResult",
     "EntitlementRow", "ImportRow",
     "ExcessRecord", "UnauthorizedRecord", "UtilizationRecord",
+    "PostPeriodRecord",
     "TOLERANCE",
 ]
