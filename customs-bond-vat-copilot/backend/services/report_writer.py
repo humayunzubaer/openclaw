@@ -110,6 +110,30 @@ COLS_UNAUTH = [
     ("remarks", "মন্তব্য", 70, None),
 ]
 
+# দাবি ৫ — মেয়াদোত্তর আমদানি
+COLS_POST_PERIOD = [
+    ("serial", "ক্রমিক", 7, None),
+    ("source", "উৎস", 18, None),
+    ("hs_code", "এইচ.এস কোড", 16, None),
+    ("item_name", "পণ্যের বিবরণ", 38, None),
+    ("bill_count", "বিল সংখ্যা", 10, None),
+    ("bill_numbers", "বিল অব এন্ট্রি নং", 26, None),
+    ("total_quantity", "পরিমাণ", 15, FMT_QTY),
+    ("unit", "একক", 8, None),
+    ("total_value_usd", "মূল্য (USD)", 15, FMT_MONEY),
+    ("assessable_value_bdt", "শুল্কায়িত মূল্য (৳)", 18, FMT_MONEY),
+    ("cd_demanded", "সিডি (৳)", 14, FMT_MONEY),
+    ("rd_demanded", "আরডি (৳)", 13, FMT_MONEY),
+    ("sd_demanded", "এসডি (৳)", 13, FMT_MONEY),
+    ("vat_demanded", "মূসক (৳)", 15, FMT_MONEY),
+    ("at_demanded", "এটি (৳)", 13, FMT_MONEY),
+    ("ait_demanded", "এআইটি (৳)", 13, FMT_MONEY),
+    ("total_revenue_impact", "মোট দাবি (৳)", 18, FMT_MONEY),
+    ("period_window", "সময়কাল", 26, None),
+    ("legal_basis", "আইনি ভিত্তি", 34, None),
+    ("remarks", "মন্তব্য", 70, None),
+]
+
 COLS_BREACH = [
     ("serial", "লঙ্ঘন নং", 10, None),
     ("breach_date", "লঙ্ঘনের তারিখ", 15, None),
@@ -358,6 +382,7 @@ class ExcelReportWriter:
         self._sheet_cover()
         self._sheet_excess()
         self._sheet_unauthorized()
+        self._sheet_post_period()
         self._sheet_bonding()
         self._sheet_ledger()
         self._sheet_capacity_limit()
@@ -438,6 +463,9 @@ class ExcelReportWriter:
             ("দাবি ৪ — উৎপাদন ক্ষমতার ৮০% সীমা [বিধি ১১(১)]",
              s.get("দাবি ৪ — উৎপাদন ক্ষমতার ৮০% সীমা লঙ্ঘন [বিধি ১১(১)] (BDT)", 0),
              f"{len(res.capacity_limit_records)}টি আইটেম"),
+            ("দাবি ৫ — মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি",
+             s.get("দাবি ৫ — মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি (BDT)", 0),
+             f"{len(res.post_period_records)}টি রেকর্ড"),
         ]
         for label, amount, detail in claims:
             ws.cell(row=r, column=2, value=label).font = Font(name=FONT_NAME, size=10)
@@ -522,6 +550,28 @@ class ExcelReportWriter:
         )
         _write_table(
             ws, 4, COLS_UNAUTH, self.result.unauthorized_records,
+            total_fields=[
+                "total_value_usd", "assessable_value_bdt", "cd_demanded",
+                "rd_demanded", "sd_demanded", "vat_demanded", "at_demanded",
+                "ait_demanded", "total_revenue_impact",
+            ],
+        )
+
+    # ------------------------------------------------------
+    def _sheet_post_period(self):
+        ws = self.wb.create_sheet("২ক. মেয়াদোত্তর আমদানি")
+        _style_title(
+            ws, 1,
+            "দাবি ৫ — নিরীক্ষা মেয়াদ সমাপনান্তে প্রাপ্যতা ব্যতীত আমদানি",
+            len(COLS_POST_PERIOD),
+            "নিরীক্ষা মেয়াদ (প্রাপ্যতার সমাপ্তি তারিখ) অতিক্রান্ত হইবার পর, নূতন "
+            "প্রাপ্যতা/UP অনুমোদনের পূর্বে, কোনো বৈধ প্রাপ্যতা বা প্রত্যয়নপত্র ব্যতীত "
+            "যে আমদানি ও স্থানীয় ক্রয় হইয়াছে। আমদানিতে সম্পূর্ণ শুল্ক-কর দাবিযোগ্য; "
+            "স্থানীয় ক্রয়ে ১৫% হারে উৎসে মূসক। আইনি ভিত্তি: এসআরও ২১৪-আইন/২০২৪ — "
+            "বিধি ৫, ৯ ও ১২।"
+        )
+        _write_table(
+            ws, 4, COLS_POST_PERIOD, self.result.post_period_records,
             total_fields=[
                 "total_value_usd", "assessable_value_bdt", "cd_demanded",
                 "rd_demanded", "sd_demanded", "vat_demanded", "at_demanded",
