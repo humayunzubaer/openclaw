@@ -67,7 +67,8 @@ class WarehouseCapacity:
     volume_cft: float = 0.0
     usable_cft: float = 0.0
     capacity_mt: float = 0.0
-    source: str = ""              # measured | given | missing
+    bond_license_mt: float = 0.0  # ★ বন্ড লাইসেন্সে উল্লিখিত ধারণক্ষমতা (যদি থাকে)
+    source: str = ""              # bond_license | measured | given | missing
     formula: str = ""
     legal_basis: str = (
         "ওয়্যারহাউস লাইসেন্সিং বিধিমালা, ২০২৪ "
@@ -85,50 +86,89 @@ def compute_warehouse_capacity(
     height_ft: float = 0.0,
     volume_cft: float = 0.0,
     given_capacity_mt: float = 0.0,
+    bond_license_capacity_mt: float = 0.0,
 ) -> WarehouseCapacity:
     """
     ওয়্যারহাউসের ধারণক্ষমতা নির্ণয় করো।
 
-    ধারণক্ষমতা = [{(আয়তন − আয়তনের ১০%) ÷ ১৩৬০} × ১২] মেট্রিক টন
+    উৎস (অগ্রাধিকার-ক্রম):
+      ১) ★ বন্ড লাইসেন্সে উল্লিখিত অনুমোদিত ধারণক্ষমতা — অফিশিয়াল, তাই
+         মাপ/প্রদত্ত মান থাকিলেও ইহাই চূড়ান্ত (নিরীক্ষক নির্দেশ; Gold Shine
+         নমুনায় ৩,৪০০ মে.টন এভাবেই গৃহীত)।
+      ২) সরাসরি প্রদত্ত ধারণক্ষমতা (মাপ না থাকিলে)।
+      ৩) ওয়্যারহাউসের মাপ হইতে গণনা:
+         [{(আয়তন − আয়তনের ১০%) ÷ ১৩৬০} × ১২] মেট্রিক টন।
+
+    একাধিক উৎস ভিন্ন মান দিলে সতর্কতা যুক্ত হয় — নিরীক্ষক যাচাই করিবেন।
     """
     wc = WarehouseCapacity(
-        length_ft=length_ft, width_ft=width_ft, height_ft=height_ft
+        length_ft=length_ft, width_ft=width_ft, height_ft=height_ft,
+        bond_license_mt=bond_license_capacity_mt,
     )
 
-    # ধারণক্ষমতা সরাসরি দেওয়া থাকিলে
-    if given_capacity_mt > 0 and not (volume_cft or (length_ft and width_ft and height_ft)):
+    # আয়তন ও পরিমাপকৃত ধারণক্ষমতা (মাপ থাকিলে) — চূড়ান্ত বা ক্রস-চেক উভয়ে ব্যবহৃত
+    if volume_cft > 0:
+        wc.volume_cft = volume_cft
+    elif length_ft and width_ft and height_ft:
+        wc.volume_cft = length_ft * width_ft * height_ft
+
+    measured_mt = 0.0
+    if wc.volume_cft > 0:
+        wc.usable_cft = wc.volume_cft * (1 - CIRCULATION_DEDUCTION)
+        measured_mt = (wc.usable_cft / CONTAINER_VOLUME_CFT) * CONTAINER_CAPACITY_MT
+
+    def _crosscheck(chosen_mt: float) -> str:
+        others = []
+        if measured_mt > 0 and abs(measured_mt - chosen_mt) > max(0.5, chosen_mt * 0.02):
+            others.append(f"পরিমাপকৃত {measured_mt:,.3f}")
+        if given_capacity_mt > 0 and abs(given_capacity_mt - chosen_mt) > max(0.5, chosen_mt * 0.02):
+            others.append(f"প্রদত্ত {given_capacity_mt:,.3f}")
+        if others:
+            return " | ⚠ ভিন্ন মান বিদ্যমান: " + ", ".join(others) + " মে.টন — যাচাই আবশ্যক"
+        return ""
+
+    # ===== অগ্রাধিকার ১ — বন্ড লাইসেন্স =====
+    if bond_license_capacity_mt > 0:
+        wc.capacity_mt = bond_license_capacity_mt
+        wc.source = "bond_license"
+        wc.formula = (
+            f"বন্ড লাইসেন্সে উল্লিখিত অনুমোদিত ধারণক্ষমতা "
+            f"= {bond_license_capacity_mt:,.3f} মে.টন"
+            + _crosscheck(bond_license_capacity_mt)
+        )
+        return wc
+
+    # ===== অগ্রাধিকার ২ — সরাসরি প্রদত্ত (মাপ না থাকিলে) =====
+    if given_capacity_mt > 0 and measured_mt <= 0:
         wc.capacity_mt = given_capacity_mt
         wc.source = "given"
         wc.formula = f"প্রদত্ত ধারণক্ষমতা {given_capacity_mt:,.3f} মে.টন"
         return wc
 
-    # আয়তন নির্ণয়
-    if volume_cft > 0:
-        wc.volume_cft = volume_cft
-    elif length_ft and width_ft and height_ft:
-        wc.volume_cft = length_ft * width_ft * height_ft
-    else:
-        wc.source = "missing"
-        wc.formula = "ওয়্যারহাউসের মাপ বা ধারণক্ষমতা পাওয়া যায় নাই"
+    # ===== অগ্রাধিকার ৩ — ওয়্যারহাউসের মাপ হইতে গণনা =====
+    if measured_mt > 0:
+        wc.capacity_mt = measured_mt
+        wc.source = "measured"
+        wc.formula = (
+            f"[{{({wc.volume_cft:,.0f} − {wc.volume_cft:,.0f}×১০%) "
+            f"÷ {CONTAINER_VOLUME_CFT:,.0f}}} × {CONTAINER_CAPACITY_MT:g}] "
+            f"= {wc.capacity_mt:,.3f} মে.টন"
+        )
+        if given_capacity_mt > 0:
+            diff = wc.capacity_mt - given_capacity_mt
+            if abs(diff) > max(0.5, wc.capacity_mt * 0.02):
+                wc.formula += (
+                    f" | ⚠ প্রদত্ত মান {given_capacity_mt:,.3f} মে.টন — "
+                    f"পার্থক্য {diff:+,.3f} মে.টন, যাচাই আবশ্যক"
+                )
         return wc
 
-    wc.usable_cft = wc.volume_cft * (1 - CIRCULATION_DEDUCTION)
-    wc.capacity_mt = (wc.usable_cft / CONTAINER_VOLUME_CFT) * CONTAINER_CAPACITY_MT
-    wc.source = "measured"
+    # ===== কিছুই পাওয়া যায় নাই =====
+    wc.source = "missing"
     wc.formula = (
-        f"[{{({wc.volume_cft:,.0f} − {wc.volume_cft:,.0f}×১০%) "
-        f"÷ {CONTAINER_VOLUME_CFT:,.0f}}} × {CONTAINER_CAPACITY_MT:g}] "
-        f"= {wc.capacity_mt:,.3f} মে.টন"
+        "ওয়্যারহাউসের মাপ, প্রদত্ত ধারণক্ষমতা বা বন্ড লাইসেন্সের ধারণক্ষমতা "
+        "— কোনোটিই পাওয়া যায় নাই"
     )
-
-    # প্রদত্ত মানের সহিত পার্থক্য থাকিলে জানাও
-    if given_capacity_mt > 0:
-        diff = wc.capacity_mt - given_capacity_mt
-        if abs(diff) > max(0.5, wc.capacity_mt * 0.02):
-            wc.formula += (
-                f" | ⚠ প্রদত্ত মান {given_capacity_mt:,.3f} মে.টন — "
-                f"পার্থক্য {diff:+,.3f} মে.টন, যাচাই আবশ্যক"
-            )
     return wc
 
 

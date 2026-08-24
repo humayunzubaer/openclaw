@@ -52,7 +52,7 @@
 |---|---|---|---|
 | C1 | মেয়াদোত্তর আমদানি = **পৃথক দাবি** | ✅ **সম্পন্ন** (দাবি ৫) | `_build_post_period` + `_is_post_period`; test `tests/test_post_period_c1.py` (১৬/১৬ pass)। ↓ "চ. অগ্রগতি" দ্রষ্টব্য |
 | C2 | বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন যাচাই | ❌ **নেই** | `EntitlementRow`-এ extended/বিয়োজন ফিল্ড নেই (`:76-129`); শুধু `doc_requisition.py:161` লাইনে চাওয়া হয় |
-| C3 | ক্যাপাসিটির **তৃতীয় উৎস — বন্ড লাইসেন্স** | ❌ **নেই** | `resolve_capacity`/`compute_one_time_capacity` কেবল warehouse/sheet জানে (`bonding_rules.py:186-262`) |
+| C3 | ক্যাপাসিটির **তৃতীয় উৎস — বন্ড লাইসেন্স** | ✅ **সম্পন্ন** | `compute_warehouse_capacity(bond_license_capacity_mt=...)` — অগ্রাধিকার + cross-check; test `tests/test_bond_license_capacity_c3.py` (১৬/১৬ pass)। ↓ "চ. অগ্রগতি" |
 | C4 | EPZ শাখা — CBMS/IP/EP যাচাই | ⚠️ **আংশিক** | `doc_requisition`-এ EPZ শ্রেণি ও পৃথক দলিল-তালিকা আছে; engine-এ IP/EP পরিমাণ ক্রস-চেক নেই |
 | C5 | বিদ্যুৎ-উৎপাদন সামঞ্জস্য যাচাই | ❌ **নেই (engine)** | শুধু `doc_requisition.py:261` লাইন; প্রতি-কেজি বিদ্যুৎ-ব্যয় check নেই |
 | C6 | মূল্য সংযোজনের হার গণনা | ✅ **আছে** | `schedule3_analyzer._check_value_addition` T-06 ≥১৫% (`:380-407`) |
@@ -111,4 +111,19 @@ refactor/branch। **কোডই চূড়ান্ত সত্য** — �
   (Gold Shine প্যাটার্ন: মেয়াদোত্তর import → পৃথক দাবি; regression: in-period
   দাবি ১/২ অক্ষত)।
 
-**পরবর্তী:** C3 (বন্ড লাইসেন্স ক্যাপাসিটি উৎস) → C2 (বর্ধিত প্রাপ্যতা [বিধি ৮])।
+### ✅ C3 — বন্ড লাইসেন্স = তৃতীয় ক্যাপাসিটি উৎস — সম্পন্ন
+
+`capacity_ledger.py`-তে `compute_warehouse_capacity()` এ নতুন
+`bond_license_capacity_mt` ইনপুট + engine-এ `bond_license_capacity_mt` param:
+
+- **উৎস অগ্রাধিকার:** (১) বন্ড লাইসেন্সের ধারণক্ষমতা → (২) প্রদত্ত মান →
+  (৩) ওয়্যারহাউস মাপ হইতে গণনা। লাইসেন্স-সংখ্যা official বিধায় মাপ/প্রদত্ত
+  থাকিলেও তাহাই চূড়ান্ত (নিরীক্ষক নির্দেশ; Gold Shine ৩,৪০০ মে.টন)।
+- **স্বচ্ছতা:** `WarehouseCapacity.source` = `bond_license` এবং একাধিক উৎস
+  ভিন্ন মান দিলে formula-তে "⚠ ভিন্ন মান বিদ্যমান … যাচাই আবশ্যক" সতর্কতা।
+- **regime অক্ষত:** পুরাতন → min(প্রাপ্যতা÷৩, লাইসেন্স); নূতন (০১.০৭.২০২৬+) →
+  লাইসেন্স। engine নিরীক্ষা-মেয়াদ দেখিয়া regime নির্ধারণ করে (পূর্ববৎ)।
+- **যাচাই:** `tests/test_bond_license_capacity_c3.py` — ৭ কেস, ১৬টি assertion
+  সব pass; পূর্বের measured/given/missing আচরণ অক্ষত (regression)।
+
+**পরবর্তী:** C2 (বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন) → C7 (T-03 মজুদকাল ২৪ মাস)।

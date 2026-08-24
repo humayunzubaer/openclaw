@@ -707,6 +707,7 @@ class ImportAnalysisEngine:
         warehouse_dims: dict | None = None,
         ledger_events: list | None = None,
         next_entitlement_date: date | None = None,
+        bond_license_capacity_mt: float = 0.0,
     ):
         self.entitlements = entitlements
         self.imports = imports
@@ -717,6 +718,9 @@ class ImportAnalysisEngine:
         self.register = register_decision or RegisterDecision()
         # ★ ওয়্যারহাউসের ধারণক্ষমতা (মেট্রিক টন) — সামগ্রিক
         self.warehouse_capacity_mt = warehouse_capacity_mt
+        # ★ বন্ড লাইসেন্সে উল্লিখিত অনুমোদিত ধারণক্ষমতা (মে.টন) — তৃতীয় উৎস,
+        #   দেওয়া থাকিলে মাপ/প্রদত্ত মানের চেয়ে অগ্রাধিকার পায় (নিরীক্ষক নির্দেশ)।
+        self.bond_license_capacity_mt = bond_license_capacity_mt
         # ওয়্যারহাউসের মাপ (ফুটে) — ধারণক্ষমতা নির্ণয়ে
         self.warehouse_dims = warehouse_dims or {}
         # তফসিল-১ রেজিস্টার হইতে প্রাপ্ত ঘটনাবলি
@@ -1550,6 +1554,7 @@ class ImportAnalysisEngine:
             height_ft=self.warehouse_dims.get("height", 0.0),
             volume_cft=self.warehouse_dims.get("volume", 0.0),
             given_capacity_mt=self.warehouse_capacity_mt,
+            bond_license_capacity_mt=self.bond_license_capacity_mt,
         )
 
         cap = compute_one_time_capacity(
