@@ -33,6 +33,7 @@ function buildForm() {
   if ($("nxt").value) fd.append("next_entitlement_date", $("nxt").value);
   fd.append("bond_license_capacity_mt", $("lic").value || "0");
   fd.append("warehouse_capacity_mt", $("wh").value || "0");
+  fd.append("extension_applies", $("ext").checked ? "true" : "false");
   return fd;
 }
 
@@ -97,6 +98,29 @@ function render(j) {
   // warnings
   const w = j.warnings || [];
   $("warnings").innerHTML = w.length ? w.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="empty">কোনো সতর্কতা নেই।</li>`;
+
+  // বিধি ৮ — বর্ধিত প্রাপ্যতা পর্যবেক্ষণ (দাবি নহে)
+  const r8 = (j.records && j.records.rule8) || [];
+  const r8box = $("rule8");
+  if (r8.length) {
+    const overall = r8.find((o) => o.scope === "overall");
+    const items = r8.filter((o) => o.scope === "item");
+    const itemRows = items.length ? `<div class="tablewrap"><table><thead><tr>
+        <th>#</th><th>প্রাপ্যতা আইটেম</th><th class="num">মূল</th><th class="num">বর্ধিত [বিধি ৮]</th>
+        <th class="num">মোট অনুমোদিত</th><th>একক</th></tr></thead><tbody>${
+        items.map((o) => `<tr><td>${o.serial}</td><td>${esc(o.entitlement_item)}</td>
+          <td class="num">${num(o.base_entitlement)}</td><td class="num">${num(o.extended_entitlement)}</td>
+          <td class="num">${num(o.combined_entitlement)}</td><td>${esc(o.unit)}</td></tr>`).join("")
+        }</tbody></table></div>` : "";
+    r8box.innerHTML = `<div class="card">
+      <h2>৩ক. বিধি ৮ — বর্ধিত প্রাপ্যতা ও বিয়োজন যাচাই <small>(পর্যবেক্ষণ, দাবি নহে)</small></h2>
+      <div class="warnbox">${esc(overall ? overall.instruction : "")}</div>
+      ${itemRows}
+      <div class="muted" style="margin-top:8px;font-size:12.5px">আইনি ভিত্তি: ${esc(overall ? overall.legal_basis : "")}</div>
+    </div>`;
+  } else {
+    r8box.innerHTML = "";
+  }
 
   // tables
   const rec = j.records || {};

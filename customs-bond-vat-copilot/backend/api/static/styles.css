@@ -50,3 +50,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .badge-ok { background: #d1fae5; color: #065f46; }
 .badge-off { background: #fee2e2; color: #991b1b; }
 .empty { color: var(--muted); font-size: 13px; padding: 4px 0; }
+.check { flex-direction: row; align-items: flex-start; gap: 8px; color: var(--ink); }
+.check input { width: auto; margin-top: 2px; }
+.warnbox { background: #fdf6e3; border: 1px solid #eadfb0; border-radius: 8px;
+  padding: 10px 12px; font-size: 13.5px; line-height: 1.6; }

@@ -51,7 +51,7 @@
 | # | সংশোধন | অবস্থা | প্রমাণ |
 |---|---|---|---|
 | C1 | মেয়াদোত্তর আমদানি = **পৃথক দাবি** | ✅ **সম্পন্ন** (দাবি ৫) | `_build_post_period` + `_is_post_period`; test `tests/test_post_period_c1.py` (১৬/১৬ pass)। ↓ "চ. অগ্রগতি" দ্রষ্টব্য |
-| C2 | বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন যাচাই | ❌ **নেই** | `EntitlementRow`-এ extended/বিয়োজন ফিল্ড নেই (`:76-129`); শুধু `doc_requisition.py:161` লাইনে চাওয়া হয় |
+| C2 | বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন যাচাই | ✅ **সম্পন্ন** | `EntitlementRow.extended_entitlement` + `effective_entitled_quantity`; `Rule8Observation` + `_build_rule8_observations`; test `tests/test_extended_entitlement_c2.py`। ↓ "চ. অগ্রগতি" |
 | C3 | ক্যাপাসিটির **তৃতীয় উৎস — বন্ড লাইসেন্স** | ✅ **সম্পন্ন** | `compute_warehouse_capacity(bond_license_capacity_mt=...)` — অগ্রাধিকার + cross-check; test `tests/test_bond_license_capacity_c3.py` (১৬/১৬ pass)। ↓ "চ. অগ্রগতি" |
 | C4 | EPZ শাখা — CBMS/IP/EP যাচাই | ⚠️ **আংশিক** | `doc_requisition`-এ EPZ শ্রেণি ও পৃথক দলিল-তালিকা আছে; engine-এ IP/EP পরিমাণ ক্রস-চেক নেই |
 | C5 | বিদ্যুৎ-উৎপাদন সামঞ্জস্য যাচাই | ❌ **নেই (engine)** | শুধু `doc_requisition.py:261` লাইন; প্রতি-কেজি বিদ্যুৎ-ব্যয় check নেই |
@@ -149,4 +149,20 @@ engine আর headless নয় — `backend/api/main.py` (FastAPI) + `backend/
 সারসংক্ষেপ)-এ "দাবি ৫" সারি যুক্ত; সর্বমোট SUM স্বয়ংক্রিয়ভাবে দাবি ৫ ধরে।
 যাচাই: post-period রেকর্ডসহ workpaper — শীট + ৩ রেকর্ড + total, cover-এ দাবি ৫।
 
-**পরবর্তী:** C2 (বর্ধিত প্রাপ্যতা [বিধি ৮]) → C7 (T-03 মজুদকাল) → OCR/Level-2 AI।
+### ✅ C2 — বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন যাচাই — সম্পন্ন
+
+- **সীমা:** `EntitlementRow.extended_entitlement` + `effective_entitled_quantity`
+  (= মূল + বর্ধিত)। excess/utilization/FIFO/assess_excess সব **মোট অনুমোদিত**-এর
+  বিপরীতে (extended=0 হইলে আচরণ অপরিবর্তিত — folded শীটও কাজ করে)।
+- **বিয়োজন পর্যবেক্ষণ (দাবি নহে):** `Rule8Observation` + `_build_rule8_observations`।
+  extension_applies flag বা কোনো এককে extended>0 থাকিলে — সামগ্রিক নির্দেশ
+  (নিরীক্ষক স্ব-ঘোষণা তলব → বন্ড রেজিস্টারে যাচাই → বিয়োজন নিশ্চিত) + আইটেমভিত্তিক
+  সারি; instruction warnings-এও যায় (Excel "৮. সতর্কতা" ও UI-তে দৃশ্যমান)।
+  **কোনো রাজস্ব যোগ করে না** — শুধু পর্যবেক্ষণ/নির্দেশ।
+- **API/UI:** `extension_applies` form param + UI checkbox + "৩ক. বিধি ৮" কার্ড।
+- **যাচাই:** `tests/test_extended_entitlement_c2.py` — ৩ কেস (Gold Shine combined
+  ১৪১১.০৮৫ / excess ১৪১.২৯১; flag-only; regression), সব pass; API flag verified।
+- **সীমা:** data_loader এখনো শীট থেকে পৃথক বর্ধিত-কলাম পার্স করে না — folded শীট বা
+  extension flag দিয়ে চলে; পৃথক-কলাম loader-সাপোর্ট পরবর্তী কাজ।
+
+**পরবর্তী:** C7 (T-03 মজুদকাল ২৪ মাস) → OCR/Level-2 AI → Module 2।

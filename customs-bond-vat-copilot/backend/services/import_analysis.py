@@ -101,6 +101,11 @@ class EntitlementRow:
     entitled_quantity: float = 0.0
     unit: str = ""
 
+    # ★ বর্ধিত প্রাপ্যতা [বিধি ৮] — নিরীক্ষা চলাকালে ৩ মাস মেয়াদ বৃদ্ধির প্রাপ্যতা।
+    #   ০ হইলে ধরে নেওয়া হয় entitled_quantity-তেই folded (নমুনা শীটের মত);
+    #   পৃথক দেওয়া থাকিলে মোট অনুমোদিত = entitled_quantity + extended_entitlement।
+    extended_entitlement: float = 0.0
+
     period_from: Optional[date] = None
     period_to: Optional[date] = None
     period_label: str = ""
@@ -139,6 +144,11 @@ class EntitlementRow:
             self.hs_code = self.members[0].hs_code
         if not self.item_name and self.members:
             self.item_name = self.members[0].item_name
+
+    @property
+    def effective_entitled_quantity(self) -> float:
+        """মোট অনুমোদিত প্রাপ্যতা = মূল + বর্ধিত [বিধি ৮] (অতিরিক্ত হিসাবের সীমা)"""
+        return (self.entitled_quantity or 0.0) + (self.extended_entitlement or 0.0)
 
     @property
     def all_hs_codes(self) -> list[str]:
@@ -558,13 +568,14 @@ class UtilizationRecord:
     entitlement_item: str
     cluster: str
     period_label: str
-    entitled_quantity: float
+    entitled_quantity: float          # মোট অনুমোদিত (মূল + বর্ধিত [বিধি ৮])
     imported_quantity: float
     balance_quantity: float
     utilization_pct: float
     unit: str
     bill_count: int
     status: str   # অতিরিক্ত | সম্পূর্ণ | আংশিক | অব্যবহৃত
+    extended_quantity: float = 0.0    # ইহার মধ্যে বর্ধিত প্রাপ্যতা [বিধি ৮] অংশ
 
 
 @dataclass
@@ -605,12 +616,35 @@ class PostPeriodRecord:
 
 
 @dataclass
+class Rule8Observation:
+    """
+    ★ বিধি ৮ — বর্ধিত প্রাপ্যতা ও বিয়োজন সংক্রান্ত পর্যবেক্ষণ (দাবি নহে)
+
+    নিরীক্ষা চলাকালে পূর্ববর্তী প্রাপ্যতার মেয়াদ ৩ মাস বৃদ্ধি করা যায়; বর্ধিত
+    পরিমাণ মোট অনুমোদিত প্রাপ্যতায় যোগ হয়। তবে নূতন প্রাপ্যতা নির্ধারণের সময়
+    বর্ধিত সময়ে ব্যবহৃত পরিমাণ বিয়োজন করিতে হইবে। ব্যবহৃত পরিমাণ প্রতিষ্ঠানের
+    স্ব-ঘোষণা — ইঞ্জিন স্বয়ংক্রিয়ভাবে গণনা করে না; নিরীক্ষক ঘোষণা তলব করিয়া
+    বন্ড রেজিস্টারের (তফসিল-১) সহিত মিলাইয়া যাচাই করিবেন।
+    """
+    serial: int
+    entitlement_item: str
+    base_entitlement: float
+    extended_entitlement: float
+    combined_entitlement: float
+    unit: str
+    instruction: str
+    legal_basis: str
+    scope: str = "item"          # item | overall
+
+
+@dataclass
 class ImportAnalysisResult:
     """সম্পূর্ণ বিশ্লেষণ ফলাফল"""
     excess_records: list[ExcessRecord] = field(default_factory=list)
     cluster_excess_records: list[ClusterExcessRecord] = field(default_factory=list)
     unauthorized_records: list[UnauthorizedRecord] = field(default_factory=list)
     post_period_records: list[PostPeriodRecord] = field(default_factory=list)
+    rule8_observations: list[Rule8Observation] = field(default_factory=list)
     machinery_records: list[MachineryRecord] = field(default_factory=list)
     bonding_records: list[BondingCapacityRecord] = field(default_factory=list)
     capacity_limit_records: list[CapacityLimitRecord] = field(default_factory=list)
@@ -657,6 +691,9 @@ class ImportAnalysisResult:
             ),
             "মেয়াদোত্তর আমদানি (দাবি ৫)": pd.DataFrame(
                 [asdict(r) for r in self.post_period_records]
+            ),
+            "বিধি ৮ বর্ধিত প্রাপ্যতা": pd.DataFrame(
+                [asdict(r) for r in self.rule8_observations]
             ),
             "বন্ডিং ক্যাপাসিটি": pd.DataFrame(
                 [asdict(r) for r in self.capacity_breach_records]
@@ -708,6 +745,7 @@ class ImportAnalysisEngine:
         ledger_events: list | None = None,
         next_entitlement_date: date | None = None,
         bond_license_capacity_mt: float = 0.0,
+        extension_applies: bool = False,
     ):
         self.entitlements = entitlements
         self.imports = imports
@@ -729,6 +767,9 @@ class ImportAnalysisEngine:
         #   period_to-এর পর, এই তারিখের পূর্ব পর্যন্ত আমদানি = দাবি ৫।
         #   None হইলে period_to-এর পরের সকল বিল দাবিতে ধরা হয় (সতর্কতাসহ)।
         self.next_entitlement_date = next_entitlement_date
+        # ★ বিধি ৮ — নিরীক্ষায় প্রাপ্যতার মেয়াদ বৃদ্ধি প্রযোজ্য কিনা (নিরীক্ষক flag)।
+        #   True হইলে সর্বদা বিয়োজন-যাচাই পর্যবেক্ষণ দেওয়া হয়।
+        self.extension_applies = extension_applies
         # একক নিষ্কাশক
         self.unit_extractor = UnitExtractor()
         self.tolerance = tolerance
@@ -886,6 +927,9 @@ class ImportAnalysisEngine:
         # ধাপ ৪.৫: ★ দাবি ৫ — মেয়াদোত্তর প্রাপ্যতা ব্যতীত আমদানি
         self._build_post_period(post_period_imports, post_period_local, result)
 
+        # ধাপ ৪.৬: ★ বিধি ৮ — বর্ধিত প্রাপ্যতা ও বিয়োজন পর্যবেক্ষণ
+        self._build_rule8_observations(result)
+
         # ধাপ ৫: মেশিনারিজ তালিকা
         self._build_machinery(machinery, result)
 
@@ -1029,7 +1073,8 @@ class ImportAnalysisEngine:
                     )
 
             imported_qty = sum(r.quantity or 0 for r in in_period)
-            entitled_qty = ent.entitled_quantity or 0.0
+            # ★ মোট অনুমোদিত = মূল + বর্ধিত [বিধি ৮]; সীমা এই মোটের বিপরীতে
+            entitled_qty = ent.effective_entitled_quantity
             allowed_qty = entitled_qty * (1 + self.tolerance)
             balance = entitled_qty - imported_qty
 
@@ -1057,6 +1102,7 @@ class ImportAnalysisEngine:
                 unit=ent.unit or (in_period[0].unit if in_period else ""),
                 bill_count=len(in_period),
                 status=status,
+                extended_quantity=round(ent.extended_entitlement or 0.0, 3),
             ))
 
             # --- অতিরিক্ত আমদানি ---
@@ -1082,6 +1128,9 @@ class ImportAnalysisEngine:
     ) -> ExcessRecord:
         """একটি অতিরিক্ত আমদানি রেকর্ড তৈরি করো — রাজস্ব হিসাবসহ"""
 
+        # ★ সীমা = মোট অনুমোদিত (মূল + বর্ধিত [বিধি ৮])
+        limit_qty = ent.effective_entitled_quantity
+
         # তারিখ অনুযায়ী সাজিয়ে দেখো কোন বিল থেকে সীমা অতিক্রম হলো
         sorted_rows = sorted(rows, key=lambda r: (r.bill_date or date.min))
         running = 0.0
@@ -1089,8 +1138,8 @@ class ImportAnalysisEngine:
         for r in sorted_rows:
             prev = running
             running += r.quantity or 0
-            if running > ent.entitled_quantity:
-                over = running - max(prev, ent.entitled_quantity)
+            if running > limit_qty:
+                over = running - max(prev, limit_qty)
                 excess_bill_list.append(f"{r.bill_number} ({over:,.0f} {r.unit or ent.unit})")
 
         # গড় একক মূল্য — তথ্যের জন্য
@@ -1104,7 +1153,7 @@ class ImportAnalysisEngine:
         excess_val_usd = excess_qty * avg_price
 
         # === ★ শুল্কায়ন — বন্ড সুবিধা বাতিল করে MIS/BE-এর সম্পূর্ণ শুল্ক-কর ===
-        tb = assess_excess(rows, limit=ent.entitled_quantity)
+        tb = assess_excess(rows, limit=limit_qty)
         excess_val_bdt = tb.assessable_value
 
         # তথ্যমূলক করহার
@@ -1121,8 +1170,10 @@ class ImportAnalysisEngine:
              f"কাঁচামালের ক্লাস্টার (এইচ.এস কোড: "
              f"{', '.join(ent.all_hs_codes)}) এর বিপরীতে প্রদত্ত "
              if ent.is_cluster else "প্রাপ্যতা ")
-            + f"{ent.entitled_quantity:,.0f} {ent.unit} "
-            f"({ent.period_label or 'মেয়াদ উল্লেখ নেই'}) এর বিপরীতে "
+            + f"{limit_qty:,.0f} {ent.unit} "
+            + (f"(মূল {ent.entitled_quantity:,.0f} + বর্ধিত [বিধি ৮] "
+               f"{ent.extended_entitlement:,.0f}) " if ent.extended_entitlement else "")
+            + f"({ent.period_label or 'মেয়াদ উল্লেখ নেই'}) এর বিপরীতে "
             f"{imported_qty:,.0f} {ent.unit} আমদানি — "
             f"{excess_qty:,.0f} {ent.unit} ({excess_pct:.1f}%) অতিরিক্ত। "
             f"{tb.calculation_note}"
@@ -1140,7 +1191,7 @@ class ImportAnalysisEngine:
             entitlement_item=ent.display_name,
             cluster=ent.cluster_label if ent.is_cluster else "",
             period_label=ent.period_label,
-            entitled_quantity=round(ent.entitled_quantity, 3),
+            entitled_quantity=round(limit_qty, 3),
             imported_quantity=round(imported_qty, 3),
             excess_quantity=round(excess_qty, 3),
             excess_pct=round(excess_pct, 2),
@@ -1341,6 +1392,61 @@ class ImportAnalysisEngine:
             f"মেয়াদোত্তর দাবি (দাবি ৫) — {len(result.post_period_records)}টি রেকর্ড, "
             f"মোট দাবি {sum(r.total_revenue_impact for r in result.post_period_records):,.0f} টাকা"
         )
+
+    # ------------------------------------------------------
+    RULE8_LEGAL_BASIS = (
+        "বার্ষিক আমদানি-প্রাপ্যতা নির্ধারণ বিধিমালা, ২০২৪ [এসআরও ২১৪-আইন/২০২৪] — "
+        "বিধি ৮ (নিরীক্ষাধীন অবস্থায় প্রাপ্যতার মেয়াদ ৩ মাস বৃদ্ধি) সহপঠিত "
+        "বর্ধিত সময়ে ব্যবহৃত পরিমাণের বিয়োজন"
+    )
+    RULE8_INSTRUCTION = (
+        "নিরীক্ষা চলাকালে বিধি ৮ অনুযায়ী পূর্ববর্তী প্রাপ্যতার মেয়াদ ৩ মাস বৃদ্ধি "
+        "প্রযোজ্য; বর্ধিত পরিমাণ মোট অনুমোদিত প্রাপ্যতায় যুক্ত হইয়াছে। তবে বর্ধিত "
+        "সময়ে ব্যবহৃত কাঁচামালের পরিমাণ প্রতিষ্ঠানের স্ব-ঘোষণা — ইঞ্জিন উহা "
+        "স্বয়ংক্রিয়ভাবে গণনা করে না। নিরীক্ষক (১) প্রতিষ্ঠানের নিকট বর্ধিত সময়ের "
+        "ব্যবহৃত পরিমাণের ঘোষণা তলব করিবেন; (২) উহা বন্ড রেজিস্টার (তফসিল-১) ও "
+        "সংশ্লিষ্ট দলিলের সহিত মিলাইয়া যাচাই করিবেন; (৩) নূতন প্রাপ্যতা নির্ধারণের "
+        "সময় ঐ পরিমাণ বিয়োজন হইয়াছে কিনা নিশ্চিত করিবেন — বিয়োজন না হইলে "
+        "পর্যবেক্ষণ হিসাবে লিপিবদ্ধ করিবেন।"
+    )
+
+    def _build_rule8_observations(self, result: ImportAnalysisResult):
+        """
+        ★ বিধি ৮ — বর্ধিত প্রাপ্যতা ও বিয়োজন যাচাই পর্যবেক্ষণ (দাবি নহে)।
+
+        যখন নিরীক্ষক extension_applies flag দেন, অথবা কোনো প্রাপ্যতা-এককে বর্ধিত
+        প্রাপ্যতা (extended_entitlement) দেওয়া থাকে — তখন বিয়োজন-যাচাই নির্দেশ দেয়।
+        """
+        items_ext = [e for e in self.entitlements if (e.extended_entitlement or 0) > 0]
+        if not items_ext and not self.extension_applies:
+            return
+
+        # সামগ্রিক নির্দেশ
+        result.rule8_observations.append(Rule8Observation(
+            serial=0, entitlement_item="সামগ্রিক",
+            base_entitlement=0.0, extended_entitlement=0.0, combined_entitlement=0.0,
+            unit="", instruction=self.RULE8_INSTRUCTION,
+            legal_basis=self.RULE8_LEGAL_BASIS, scope="overall",
+        ))
+
+        # আইটেমভিত্তিক (যেখানে বর্ধিত পরিমাণ জানা আছে)
+        for i, e in enumerate(items_ext, start=1):
+            result.rule8_observations.append(Rule8Observation(
+                serial=i, entitlement_item=e.display_name,
+                base_entitlement=round(e.entitled_quantity or 0.0, 3),
+                extended_entitlement=round(e.extended_entitlement or 0.0, 3),
+                combined_entitlement=round(e.effective_entitled_quantity, 3),
+                unit=e.unit,
+                instruction=(
+                    "এই এককের মোট অনুমোদিত প্রাপ্যতায় বর্ধিত প্রাপ্যতা [বিধি ৮] "
+                    "অন্তর্ভুক্ত। বর্ধিত সময়ে ব্যবহৃত পরিমাণ প্রতিষ্ঠানের ঘোষণা "
+                    "হইতে লইয়া বন্ড রেজিস্টারে যাচাই ও বিয়োজন নিশ্চিত করুন।"
+                ),
+                legal_basis=self.RULE8_LEGAL_BASIS, scope="item",
+            ))
+
+        result.warnings.append("বিধি ৮ (বর্ধিত প্রাপ্যতা): " + self.RULE8_INSTRUCTION)
+        logger.info(f"বিধি ৮ পর্যবেক্ষণ — {len(result.rule8_observations)}টি")
 
     # ------------------------------------------------------
     def _build_cluster_excess(
@@ -1923,6 +2029,7 @@ class ImportAnalysisEngine:
                 sum(r.total_revenue_impact for r in pp), 2
             ),
             "মেয়াদোত্তর দাবি-রেকর্ড সংখ্যা": len(pp),
+            "বিধি ৮ বর্ধিত-প্রাপ্যতা পর্যবেক্ষণ (দাবি নহে)": len(result.rule8_observations),
             "সর্বমোট রাজস্ব দাবি (BDT)": round(
                 sum(r.total_revenue_impact for r in un)
                 + sum(r.total_revenue_impact for r in ex)
@@ -1941,6 +2048,6 @@ __all__ = [
     "ImportAnalysisEngine", "ImportAnalysisResult",
     "EntitlementRow", "ImportRow",
     "ExcessRecord", "UnauthorizedRecord", "UtilizationRecord",
-    "PostPeriodRecord",
+    "PostPeriodRecord", "Rule8Observation",
     "TOLERANCE",
 ]

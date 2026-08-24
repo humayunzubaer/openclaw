@@ -41,6 +41,10 @@
           <label>ওয়্যারহাউসের ধারণক্ষমতা (মে.টন, ঐচ্ছিক)
             <input type="number" id="wh" step="0.001" placeholder="প্রদত্ত মান" />
           </label>
+          <label class="check">
+            <input type="checkbox" id="ext" />
+            <span>বিধি ৮ — বর্ধিত প্রাপ্যতা (৩ মাস) প্রযোজ্য (বিয়োজন-যাচাই পর্যবেক্ষণ দেখাবে)</span>
+          </label>
         </div>
         <div class="row-end">
           <button id="xlsx" class="btn btn-ghost">📊 Excel কার্যপত্র</button>
@@ -59,6 +63,7 @@
           <h2>৩. সতর্কতা ও টীকা</h2>
           <ul id="warnings" class="warnings"></ul>
         </div>
+        <div id="rule8"></div>
         <div id="tables"></div>
       </section>
     </main>
