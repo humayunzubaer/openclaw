@@ -22,6 +22,7 @@ const num = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigit
 // ---------- form ----------
 function buildForm() {
   const ent = $("ent").files[0], imp = $("imp").files[0], local = $("local").files[0];
+  const register = $("register").files[0];
   if (!ent || !imp) {
     setMsg("প্রাপ্যতা শীট ও আমদানি ফাইল — দুটোই দিন।", "err");
     return null;
@@ -30,6 +31,7 @@ function buildForm() {
   fd.append("entitlement_file", ent);
   fd.append("imports_file", imp);
   if (local) fd.append("local_file", local);
+  if (register) fd.append("register_file", register);
   if ($("nxt").value) fd.append("next_entitlement_date", $("nxt").value);
   fd.append("bond_license_capacity_mt", $("lic").value || "0");
   fd.append("warehouse_capacity_mt", $("wh").value || "0");

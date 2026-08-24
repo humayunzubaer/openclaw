@@ -183,6 +183,9 @@ class ImportRow:
     row_id: int
     bill_number: str = ""
     bill_date: Optional[date] = None
+    # ★ বন্ড রেজিস্টার (তফসিল-১) হইতে প্রাপ্ত ইন্টু-বন্ড তারিখ — প্রবেশক্রম নির্ণয়ে
+    #   ব্যবহৃত (FIFO নয়)। রেজিস্টার না থাকিলে None → bill_date fallback (আনুমানিক)।
+    into_bond_date: Optional[date] = None
     bill_type: str = "IM-4"
 
     hs_code: Optional[str] = None
@@ -818,6 +821,10 @@ class ImportAnalysisEngine:
         # ধাপ ০: ★ আমদানি ফাইলটি সঠিক মেয়াদের কিনা যাচাই
         self._validate_period_coverage(result)
 
+        # ধাপ ০ক: ★ বন্ড রেজিস্টার (তফসিল-১) হইতে ইন্টু-বন্ড তারিখ প্রয়োগ —
+        #   অতিরিক্ত আমদানির প্রবেশক্রম রেজিস্টার-ভিত্তিক (FIFO নহে)
+        self._apply_register_into_dates(result)
+
         # ধাপ ০.৫: ★ মেয়াদোত্তর বিল পৃথক করা — এগুলো দাবি ৫-এ যাইবে, এবং
         #   excess/অননুমোদিত/ক্যাপাসিটি হিসাব হইতে বাদ থাকিবে (দ্বৈত দাবি রোধ)।
         post_period_imports = [r for r in self.imports if self._is_post_period(r)]
@@ -1012,6 +1019,41 @@ class ImportAnalysisEngine:
         return True
 
     # ------------------------------------------------------
+    def _apply_register_into_dates(self, result: ImportAnalysisResult):
+        """
+        ★ বন্ড রেজিস্টার (তফসিল-১) হইতে প্রতিটি বিলের ইন্টু-বন্ড তারিখ AIS সারিতে
+        প্রয়োগ করে — অতিরিক্ত আমদানির প্রবেশক্রম FIFO নয়, রেজিস্টার-ভিত্তিক হয়।
+        রেজিস্টার না থাকিলে বিল অব এন্ট্রির তারিখ ব্যবহৃত হয় (আনুমানিক)।
+        """
+        if not self.ledger_events:
+            result.warnings.append(
+                "ℹ বন্ড রেজিস্টার (তফসিল-১) দেওয়া হয় নাই — অতিরিক্ত আমদানির "
+                "প্রবেশক্রম বিল অব এন্ট্রির তারিখ অনুযায়ী (আনুমানিক) নির্ণীত। "
+                "রেজিস্টার প্রদান করিলে ইন্টু-বন্ড তারিখে নির্ভুল হইবে।"
+            )
+            return
+
+        into_by_ref: dict[str, date] = {}
+        for ev in self.ledger_events:
+            if getattr(ev, "kind", "") == "into_bond" and ev.reference and ev.event_date:
+                cur = into_by_ref.get(ev.reference)
+                if cur is None or ev.event_date < cur:
+                    into_by_ref[ev.reference] = ev.event_date
+
+        applied = 0
+        for r in self.imports:
+            d = into_by_ref.get(r.bill_number)
+            if d:
+                r.into_bond_date = d
+                applied += 1
+
+        result.warnings.append(
+            f"✓ বন্ড রেজিস্টার (তফসিল-১) হইতে {applied}টি বিলের ইন্টু-বন্ড তারিখ "
+            f"প্রয়োগ করা হইয়াছে — অতিরিক্ত আমদানির প্রবেশক্রম রেজিস্টার-ভিত্তিক "
+            f"(FIFO অনুমান নহে)।"
+        )
+
+    # ------------------------------------------------------
     def _audit_period_end(self) -> date | None:
         """নিরীক্ষা মেয়াদের সমাপ্তি (প্রাপ্যতা শীটের period_to)"""
         return next((e.period_to for e in self.entitlements if e.period_to), None)
@@ -1131,8 +1173,8 @@ class ImportAnalysisEngine:
         # ★ সীমা = মোট অনুমোদিত (মূল + বর্ধিত [বিধি ৮])
         limit_qty = ent.effective_entitled_quantity
 
-        # তারিখ অনুযায়ী সাজিয়ে দেখো কোন বিল থেকে সীমা অতিক্রম হলো
-        sorted_rows = sorted(rows, key=lambda r: (r.bill_date or date.min))
+        # প্রবেশক্রম (into-bond register তারিখ; না থাকিলে BE তারিখ) অনুযায়ী
+        sorted_rows = sorted(rows, key=lambda r: (r.into_bond_date or r.bill_date or date.min))
         running = 0.0
         excess_bill_list: list[str] = []
         for r in sorted_rows:

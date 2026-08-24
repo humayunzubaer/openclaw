@@ -172,16 +172,26 @@ def assess_bill(row, proportion: float = 1.0) -> TaxBreakdown:
 # FIFO ভিত্তিতে অতিরিক্ত অংশ নির্ধারণ
 # ==========================================================
 
-def allocate_excess_fifo(
+def allocate_excess_by_entry(
     rows: Iterable, limit: float
 ) -> list[tuple[Any, float, float]]:
     """
-    তারিখক্রমে বিলগুলো সীমা (প্রাপ্যতা/ক্যাপাসিটি) পূরণ করে।
-    সীমা অতিক্রমের পর যে অংশ আসে সেটিই আপত্তিযোগ্য।
+    ★ প্রবেশক্রম অনুযায়ী (FIFO অনুমান নহে) সীমা অতিক্রমের অংশ নির্ধারণ।
+
+    প্রবেশের ক্রম বন্ড রেজিস্টার (তফসিল-১) এর ইন্টু-বন্ড তারিখে নির্ধারিত হয়
+    (`into_bond_date`)। রেজিস্টার না থাকিলে বিল অব এন্ট্রির তারিখ ব্যবহৃত হয়
+    (আনুমানিক)। সীমা (প্রাপ্যতা/ক্যাপাসিটি) পূরণের পর যে অংশ প্রবেশ করে তাহাই
+    আপত্তিযোগ্য।
 
     ফেরত: [(বিল, অতিরিক্ত পরিমাণ, অনুপাত), ...]
     """
-    ordered = sorted(rows, key=lambda r: (r.bill_date or date.min, r.bill_number))
+    ordered = sorted(
+        rows,
+        key=lambda r: (
+            getattr(r, "into_bond_date", None) or r.bill_date or date.min,
+            r.bill_number,
+        ),
+    )
     out: list[tuple[Any, float, float]] = []
     running = 0.0
 
@@ -214,7 +224,7 @@ def assess_excess(rows: Iterable, limit: float, opening_stock: float = 0.0) -> T
     ইতিমধ্যেই ওয়্যারহাউসে আছে, নতুন প্রবেশের জন্য অবশিষ্ট সীমা কম।
     """
     effective_limit = max(0.0, limit - (opening_stock or 0.0))
-    allocations = allocate_excess_fifo(rows, effective_limit)
+    allocations = allocate_excess_by_entry(rows, effective_limit)
 
     total = TaxBreakdown()
     for row, excess_qty, prop in allocations:
@@ -249,7 +259,10 @@ def assess_full(rows: Iterable) -> TaxBreakdown:
     return total.round_all()
 
 
+# পশ্চাৎ-সঙ্গতি উপনাম (পুরাতন কল-সাইট)
+allocate_excess_fifo = allocate_excess_by_entry
+
 __all__ = [
     "TaxBreakdown", "assess_bill", "assess_excess", "assess_full",
-    "allocate_excess_fifo",
+    "allocate_excess_by_entry", "allocate_excess_fifo",
 ]

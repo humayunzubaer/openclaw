@@ -26,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 
 from services.data_loader import DataLoader
 from services.import_analysis import ImportAnalysisEngine
+from services.capacity_ledger import BondRegisterReader
+from services.bond_register import RegisterDecision
 from services.report_writer import write_report
 from utils.logger import logger
 
@@ -74,6 +76,7 @@ def _run_engine(
     bond_license_capacity_mt: float,
     warehouse_capacity_mt: float,
     extension_applies: bool = False,
+    register_path: Optional[str] = None,
 ):
     """ফাইল লোড করে ImportAnalysisEngine চালায়; (result, dl, meta) ফেরত দেয়"""
     dl = DataLoader(verbose=False)
@@ -91,6 +94,16 @@ def _run_engine(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"স্থানীয় ক্রয় ফাইল পড়া যায়নি: {e}")
 
+    # ★ বন্ড রেজিস্টার (তফসিল-১) — ইন্টু/এক্স-বন্ড ঘটনাবলি (দাবি ২ প্রবেশক্রম ও দাবি ৩)
+    ledger_events = None
+    register_decision = None
+    if register_path:
+        try:
+            ledger_events = BondRegisterReader(verbose=False).read(register_path)
+            register_decision = RegisterDecision(provided=True, file_path=register_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"বন্ড রেজিস্টার পড়া যায়নি: {e}")
+
     engine = ImportAnalysisEngine(
         entitlements,
         imports,
@@ -101,6 +114,8 @@ def _run_engine(
         extension_applies=extension_applies,
         bonding_capacity_value_bdt=dl.bonding_capacity.get("value_bdt", 0.0),
         bonding_capacity_value_usd=dl.bonding_capacity.get("value_usd", 0.0),
+        ledger_events=ledger_events,
+        register_decision=register_decision,
     )
     result = engine.analyze()
     meta = {
@@ -148,6 +163,7 @@ async def analyze_import(
     entitlement_file: UploadFile = File(...),
     imports_file: UploadFile = File(...),
     local_file: Optional[UploadFile] = File(None),
+    register_file: Optional[UploadFile] = File(None),
     next_entitlement_date: Optional[str] = Form(None),
     bond_license_capacity_mt: float = Form(0.0),
     warehouse_capacity_mt: float = Form(0.0),
@@ -159,10 +175,12 @@ async def analyze_import(
         ent_path = await _save_upload(entitlement_file, tmp)
         imp_path = await _save_upload(imports_file, tmp)
         local_path = await _save_upload(local_file, tmp) if local_file else None
+        register_path = await _save_upload(register_file, tmp) if register_file else None
         try:
             result, dl, _ = _run_engine(
                 ent_path, imp_path, local_path, nxt,
                 bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
+                register_path,
             )
         except HTTPException:
             raise
@@ -177,6 +195,7 @@ async def analyze_import_xlsx(
     entitlement_file: UploadFile = File(...),
     imports_file: UploadFile = File(...),
     local_file: Optional[UploadFile] = File(None),
+    register_file: Optional[UploadFile] = File(None),
     next_entitlement_date: Optional[str] = Form(None),
     bond_license_capacity_mt: float = Form(0.0),
     warehouse_capacity_mt: float = Form(0.0),
@@ -188,10 +207,12 @@ async def analyze_import_xlsx(
     ent_path = await _save_upload(entitlement_file, tmp)
     imp_path = await _save_upload(imports_file, tmp)
     local_path = await _save_upload(local_file, tmp) if local_file else None
+    register_path = await _save_upload(register_file, tmp) if register_file else None
     try:
         result, _, meta = _run_engine(
             ent_path, imp_path, local_path, nxt,
             bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
+            register_path,
         )
         out = Path(tmp) / "audit_workpaper.xlsx"
         write_report(result, out, meta)
