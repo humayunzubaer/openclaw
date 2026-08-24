@@ -126,4 +126,19 @@ refactor/branch। **কোডই চূড়ান্ত সত্য** — �
 - **যাচাই:** `tests/test_bond_license_capacity_c3.py` — ৭ কেস, ১৬টি assertion
   সব pass; পূর্বের measured/given/missing আচরণ অক্ষত (regression)।
 
-**পরবর্তী:** C2 (বর্ধিত প্রাপ্যতা [বিধি ৮] + বিয়োজন) → C7 (T-03 মজুদকাল ২৪ মাস)।
+### ✅ চলমান অ্যাপ (FastAPI + UI) — Module 1 এখন সত্যিই চলে
+
+engine আর headless নয় — `backend/api/main.py` (FastAPI) + `backend/api/static/`
+(লোকাল UI) একই process-এ:
+
+- **এন্ডপয়েন্ট:** `POST /api/analyze/import` (প্রাপ্যতা+আমদানি → ৫ দাবিসহ JSON),
+  `POST /api/analyze/import/xlsx` (১০-শীট Excel কার্যপত্র), `GET /` (UI), `/api/health`।
+- **UI:** ফাইল আপলোড + প্যারামিটার (নতুন প্রাপ্যতা তারিখ, বন্ড লাইসেন্স/ওয়্যারহাউস
+  ধারণক্ষমতা) → দাবির সারসংক্ষেপ (stat cards) + সতর্কতা + বিস্তারিত টেবিল।
+- **চালানো:** `cd backend && python3 run_server.py` → http://localhost:4800 (LAN/মোবাইলেও)।
+- **যাচাই (sandbox, TestClient):** sample_full.xlsx — analyze 200 (৮ প্রাপ্যতা, ১৪ আমদানি,
+  দাবি ২ ৳১০.৬৮ লক্ষ, সর্বমোট ৳৫০.২ লক্ষ), xlsx 200 (২২KB), UI/app.js 200।
+- **সীমা:** দাবি ৩ কনজাম্পশন-রেজিস্টার সাপেক্ষ; Excel-এ দাবি ৫ শীট এখনো নেই; OCR/
+  Level-2 AI/Module 2–6 বাকি।
+
+**পরবর্তী:** Excel-এ দাবি ৫ শীট → C2 (বর্ধিত প্রাপ্যতা [বিধি ৮]) → C7 (T-03 মজুদকাল)।
