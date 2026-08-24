@@ -63,6 +63,7 @@ src/
   modules/                        অডিট-টাইপ সংজ্ঞা (checklist, doc types, numeric specs, legal map)
   checks/numeric.js               সংখ্যাগত auto-check ইঞ্জিন (reconciliation + রাজস্ব হিসাব)
   checks/evidence.js              Smart Evidence Chip extraction (OCR → context-aware সংখ্যা)
+  checks/validity.js              মেয়াদ/Entitlement যাচাই (তারিখ ও HS-list ভিত্তিক)
   report/generate.js              Working Paper / Note Sheet / Final Report
 public/                           UI (ড্যাশবোর্ড, নথি, findings, সংখ্যাগত যাচাই, রিপোর্ট)
 audits/                           প্রতিটি অডিটের কেস-ফোল্ডার (git-ignored)
@@ -101,6 +102,18 @@ test/                             node:test (শূন্য-নির্ভর�
 নিরীক্ষক সঠিক field বেছে **প্রয়োগ** চাপলে মানটি field-এ বসে, numeric পুনঃহিসাব হয়, এবং **audit trail** (`evidence.json`) লেখা হয় — কোন মান, কোন নথির কোন পৃষ্ঠা থেকে, কোন confidence-এ, কে, কখন প্রয়োগ করলেন (override হলে আগের মানসহ)। **🧾 Trail** বাটনে পুরো log দেখা যায়। field-এ provenance badge (📄 নথি · পৃ.N · %) দেখায় মানটি কোথা থেকে এলো; হাতে বদলালে badge স্বয়ংক্রিয়ভাবে সরে যায় (log অক্ষত থাকে)।
 
 > extraction ইঞ্জিন `src/checks/evidence.js`; OCR চালু (`npm install tesseract.js`) থাকলে নথির টেক্সট থেকেই সংখ্যা আসে। auto-map নয় — টুল সাজেশন দেয়, চূড়ান্ত সিদ্ধান্ত নিরীক্ষকের।
+
+## মেয়াদ / Entitlement যাচাই (তারিখভিত্তিক)
+
+"📅 মেয়াদ যাচাই" ট্যাবে সংখ্যাগত নয় এমন compliance check — তারিখ ও HS-list ভিত্তিক (ইঞ্জিন `src/checks/validity.js`):
+
+| Check | কী যাচাই হয় | আইন |
+|-------|-------------|-----|
+| বন্ড লাইসেন্স মেয়াদ | লাইসেন্স মেয়াদ vs নিরীক্ষা তারিখ — উত্তীর্ণ (high) বা ≤৯০ দিন (medium) | Customs Act Ch. XI |
+| UP/UD মেয়াদে লেনদেন | B/E/রপ্তানি তারিখ UP/UD/EP বৈধতার (from–to) মধ্যে কি | BWL Rules |
+| HS code entitlement | আমদানিকৃত প্রতিটি HS code অনুমোদিত তালিকায় আছে কি (বহির্ভূতগুলো তালিকাভুক্ত হয়) | Customs Act Ch. XI |
+
+flag হলে "➕ Finding" চেপে চূড়ান্ত রিপোর্টে নেওয়া যায় (compliance finding, রাজস্ব ০)। রিপোর্টে আলাদা "মেয়াদ / Entitlement যাচাই" সেকশন আসে।
 
 ## Evidence ↔ Finding (পৃষ্ঠা-লেভেল প্রমাণ)
 

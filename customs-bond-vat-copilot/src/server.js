@@ -14,6 +14,7 @@ import { isOcrAvailable, recognize } from "./ocr.js";
 import { listProviders, draftFindings } from "./ai/index.js";
 import { runNumericChecks, resultToFinding } from "./checks/numeric.js";
 import { scanDocuments } from "./checks/evidence.js";
+import { runValidityChecks, validityResultToFinding } from "./checks/validity.js";
 import { buildReport } from "./report/generate.js";
 import { toWordDoc, toXlsx, toPrintablePdfHtml } from "./report/export.js";
 import { getSettings, saveSettings, redactSettings } from "./settings.js";
@@ -202,6 +203,41 @@ const routes = [
     json(res, 200, { numeric: { results, summary }, applied: record });
   }],
   ["GET", /^\/api\/audits\/([^/]+)\/evidence$/, async ([id], _req, res) => json(res, 200, await store.getEvidence(id))],
+
+  // মেয়াদ/Entitlement যাচাই (তারিখ ও HS-list ভিত্তিক)
+  ["GET", /^\/api\/audits\/([^/]+)\/validity$/, async ([id], _req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const saved = await store.getValidity(id);
+    json(res, 200, { specs: module.validityChecks ?? [], inputs: saved.inputs, results: saved.results, summary: saved.summary });
+  }],
+  ["POST", /^\/api\/audits\/([^/]+)\/validity$/, async ([id], req, res) => {
+    const audit = await store.getAudit(id);
+    const module = getModule(audit?.moduleId);
+    if (!module) return json(res, 404, { error: "not found" });
+    const { inputs } = await readBody(req);
+    const { results, summary } = runValidityChecks(module, inputs ?? {});
+    await store.saveValidity(id, { inputs: inputs ?? {}, results, summary });
+    json(res, 200, { results, summary });
+  }],
+  ["POST", /^\/api\/audits\/([^/]+)\/validity\/to-findings$/, async ([id], req, res) => {
+    const { checkIds } = await readBody(req);
+    const saved = await store.getValidity(id);
+    const wanted = Array.isArray(checkIds) && checkIds.length ? new Set(checkIds) : null;
+    const existing = await store.listFindings(id);
+    const seen = new Set(existing.filter((f) => f.source === "validity").map((f) => f.title));
+    let added = 0, skipped = 0;
+    for (const r of saved.results ?? []) {
+      if (r.status !== "flag") continue;
+      if (wanted && !wanted.has(r.id)) continue;
+      if (seen.has(r.title)) { skipped++; continue; }
+      await store.addFinding(id, validityResultToFinding(r));
+      seen.add(r.title);
+      added++;
+    }
+    json(res, 200, { added, skipped });
+  }],
   // flag হওয়া numeric result → finding (ডুপ্লিকেট এড়াতে একই title-এর numeric finding থাকলে skip)
   ["POST", /^\/api\/audits\/([^/]+)\/numeric\/to-findings$/, async ([id], req, res) => {
     const { checkIds } = await readBody(req);
@@ -238,14 +274,15 @@ const routes = [
     const audit = await store.getAudit(id);
     const module = getModule(audit?.moduleId);
     if (!module) return json(res, 404, { error: "not found" });
-    const [findings, documents, workingPaper, numeric] = await Promise.all([
+    const [findings, documents, workingPaper, numeric, validity] = await Promise.all([
       store.listFindings(id),
       store.listDocuments(id),
       store.getWorkingPaper(id),
       store.getNumeric(id),
+      store.getValidity(id),
     ]);
     try {
-      const markdown = buildReport(kind, { audit, module, findings, documents, workingPaper, numeric });
+      const markdown = buildReport(kind, { audit, module, findings, documents, workingPaper, numeric, validity });
       json(res, 200, { kind, markdown });
     } catch (err) {
       json(res, 400, { error: String(err?.message ?? err) });
@@ -256,13 +293,14 @@ const routes = [
     const audit = await store.getAudit(id);
     const module = getModule(audit?.moduleId);
     if (!module) return json(res, 404, { error: "not found" });
-    const [findings, documents, workingPaper, numeric] = await Promise.all([
+    const [findings, documents, workingPaper, numeric, validity] = await Promise.all([
       store.listFindings(id),
       store.listDocuments(id),
       store.getWorkingPaper(id),
       store.getNumeric(id),
+      store.getValidity(id),
     ]);
-    const ctx = { audit, module, findings, documents, workingPaper, numeric };
+    const ctx = { audit, module, findings, documents, workingPaper, numeric, validity };
     const slug = (audit.institution || "audit").replace(/[^\wঀ-৿]+/g, "_");
 
     if (format === "excel") {

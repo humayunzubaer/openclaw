@@ -74,7 +74,7 @@ async function viewAudit(id, tab = "dashboard") {
       <div><h2>${esc(audit.institution || "নামহীন")}</h2><div class="muted">${esc(module.title)}</div></div>
     </div>
     <div class="tabs" id="tabs">
-      ${["dashboard","documents","findings","numeric","working-paper","reports","settings"].map((t)=>
+      ${["dashboard","documents","findings","numeric","validity","working-paper","reports","settings"].map((t)=>
         `<div class="tab ${t===tab?"active":""}" data-tab="${t}">${tabLabel(t)}</div>`).join("")}
     </div>
     <div id="tab-body"><div class="loading">লোড হচ্ছে…</div></div>`;
@@ -86,12 +86,13 @@ async function viewAudit(id, tab = "dashboard") {
   if (tab === "documents") return renderDocuments(body, id, module);
   if (tab === "findings") return renderFindings(body, id, module);
   if (tab === "numeric") return renderNumeric(body, id, module);
+  if (tab === "validity") return renderValidity(body, id, module);
   if (tab === "working-paper") return renderWorkingPaper(body, id, module);
   if (tab === "reports") return renderReports(body, id);
   if (tab === "settings") return renderSettings(body);
 }
 
-const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", numeric:"🧮 সংখ্যাগত যাচাই", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট", settings:"⚙️ সেটিংস" }[t]);
+const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", numeric:"🧮 সংখ্যাগত যাচাই", validity:"📅 মেয়াদ যাচাই", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট", settings:"⚙️ সেটিংস" }[t]);
 
 async function renderDashboard(body, id, module) {
   const [docs, findings] = await Promise.all([api.get(`/api/audits/${id}/documents`), api.get(`/api/audits/${id}/findings`)]);
@@ -483,6 +484,95 @@ async function renderNumeric(body, id, module) {
       const r = resById()[cid];
       if (!r || r.status !== "flag") return alert("এই check-এ কোনো ব্যত্যয় নেই (আগে হিসাব করুন)।");
       const resp = await api.send("POST", `/api/audits/${id}/numeric/to-findings`, { checkIds: [cid] });
+      alert(resp.added ? "Finding হিসেবে যোগ হয়েছে।" : "আগে থেকেই যোগ করা আছে।");
+    };
+  });
+}
+
+// ---------- Validity (মেয়াদ/Entitlement) ----------
+async function renderValidity(body, id, module) {
+  const data = await api.get(`/api/audits/${id}/validity`);
+  const specs = data.specs || [];
+  const inputs = data.inputs || {};
+  let results = data.results || [];
+  const resById = () => Object.fromEntries(results.map((r) => [r.id, r]));
+
+  if (!specs.length) { body.innerHTML = `<div class="empty">এই মডিউলে মেয়াদ-যাচাই নেই।</div>`; return; }
+
+  const cards = specs.map((s) => {
+    const saved = inputs[s.id] || {};
+    const fields = s.inputs.map((inp) => `
+      <label class="num-field">${esc(inp.label)}${inp.optional ? ' <span class="muted">— ঐচ্ছিক</span>' : ""}
+        <input type="${inp.type === "date" ? "date" : "text"}" data-check="${s.id}" data-key="${inp.key}" value="${esc(saved[inp.key] ?? "")}" ${inp.type === "text" ? `placeholder="যেমন: 5208.11, 6109.10"` : ""} />
+      </label>`).join("");
+    return `<div class="card num-card" data-check="${s.id}">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><strong>${esc(s.title)}</strong><div class="muted" style="font-size:12.5px;margin-top:2px">${esc(s.area)} · ${esc(s.formula || "")}</div></div>
+        <button class="btn btn-ghost btn-sm act-promote" title="Finding হিসেবে যোগ">➕ Finding</button>
+      </div>
+      <div class="num-grid">${fields}</div>
+      <div class="num-result" data-result="${s.id}"></div>
+    </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div><h3 style="margin:0">📅 মেয়াদ / Entitlement যাচাই</h3><div class="muted" style="font-size:13px">তারিখ ও HS code বসান → যাচাই করুন। ব্যত্যয় পেলে "Finding" চেপে রিপোর্টে নিন।</div></div>
+      <div class="row">
+        <button class="btn btn-ghost" id="val-promote-all">flag → Findings</button>
+        <button class="btn btn-primary" id="val-check">যাচাই করুন</button>
+      </div>
+    </div>
+    <div id="val-summary"></div>
+    <div class="grid">${cards}</div>`;
+
+  const renderResults = () => {
+    const map = resById();
+    body.querySelectorAll(".num-result").forEach((el) => {
+      const r = map[el.dataset.result];
+      if (!r || r.status === "insufficient") { el.innerHTML = r?.status === "insufficient" ? `<div class="muted" style="font-size:12.5px">${esc(r.observation)}</div>` : ""; return; }
+      const sev = SEV[r.severity] || SEV.low;
+      const badge = r.status === "flag" ? `<span class="pill" style="background:${sev.c};color:#fff">⚠ ${sev.l}</span>` : `<span class="pill" style="background:var(--ok,#2e7d32);color:#fff">✓ ঠিক আছে</span>`;
+      el.innerHTML = `<div class="num-out ${r.status}">${badge}<div style="margin-top:4px">${esc(r.observation)}</div></div>`;
+    });
+    const flagged = results.filter((r) => r.status === "flag");
+    document.getElementById("val-summary").innerHTML = results.length
+      ? `<div class="stat-row"><div class="stat"><div class="n" style="color:var(--high)">${flagged.length}</div><div class="l">মেয়াদ/entitlement ব্যত্যয়</div></div></div>`
+      : "";
+  };
+  renderResults();
+
+  const collectInputs = () => {
+    const out = {};
+    body.querySelectorAll("input[data-check]").forEach((el) => {
+      if (el.value === "") return;
+      (out[el.dataset.check] ??= {})[el.dataset.key] = el.value;
+    });
+    return out;
+  };
+
+  document.getElementById("val-check").onclick = async () => {
+    const btn = document.getElementById("val-check");
+    btn.textContent = "যাচাই হচ্ছে…"; btn.disabled = true;
+    const r = await api.send("POST", `/api/audits/${id}/validity`, { inputs: collectInputs() });
+    results = r.results || [];
+    renderResults();
+    btn.textContent = "✓ যাচাই হয়েছে"; setTimeout(() => { btn.textContent = "যাচাই করুন"; btn.disabled = false; }, 1200);
+  };
+
+  document.getElementById("val-promote-all").onclick = async () => {
+    if (!results.some((r) => r.status === "flag")) return alert("আগে যাচাই করুন — কোনো flag পাওয়া যায়নি।");
+    if (!confirm("সব flag হওয়া যাচাই Finding হিসেবে যোগ হবে (ডুপ্লিকেট বাদ)। এগিয়ে যাবেন?")) return;
+    const r = await api.send("POST", `/api/audits/${id}/validity/to-findings`, {});
+    alert(`${r.added}টি Finding যোগ হয়েছে${r.skipped ? `, ${r.skipped}টি আগে থেকেই ছিল` : ""}।`);
+  };
+
+  body.querySelectorAll(".num-card").forEach((card) => {
+    card.querySelector(".act-promote").onclick = async () => {
+      const cid = card.dataset.check;
+      const r = resById()[cid];
+      if (!r || r.status !== "flag") return alert("এই যাচাইয়ে কোনো ব্যত্যয় নেই (আগে যাচাই করুন)।");
+      const resp = await api.send("POST", `/api/audits/${id}/validity/to-findings`, { checkIds: [cid] });
       alert(resp.added ? "Finding হিসেবে যোগ হয়েছে।" : "আগে থেকেই যোগ করা আছে।");
     };
   });

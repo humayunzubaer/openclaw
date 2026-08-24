@@ -164,6 +164,45 @@ export const bondDirectNonGarments = {
     },
   ],
 
+  // মেয়াদ/Entitlement যাচাই (তারিখ ও HS-list ভিত্তিক; হিসাব src/checks/validity.js)।
+  // inputs[].type: "date" (YYYY-MM-DD) | "text" (list)। optional true = না দিলে ডিফল্ট।
+  validityChecks: [
+    {
+      id: "val-license-expiry",
+      title: "বন্ড লাইসেন্স মেয়াদ",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "customs-act-13",
+      formula: "লাইসেন্স মেয়াদ vs নিরীক্ষা তারিখ — উত্তীর্ণ (high) বা ≤৯০ দিন (medium) হলে flag",
+      inputs: [
+        { key: "licenseExpiry", label: "লাইসেন্স মেয়াদ শেষ", type: "date" },
+        { key: "asOf", label: "নিরীক্ষা তারিখ (as-of)", type: "date", optional: true },
+      ],
+    },
+    {
+      id: "val-up-coverage",
+      title: "UP/UD মেয়াদে লেনদেন",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "bwl-rules",
+      formula: "লেনদেন (B/E/রপ্তানি) তারিখ UP/UD/EP বৈধতার (from–to) মধ্যে কি",
+      inputs: [
+        { key: "upValidFrom", label: "UP/UD/EP বৈধ শুরু", type: "date" },
+        { key: "upValidTo", label: "UP/UD/EP বৈধ শেষ", type: "date" },
+        { key: "transactionDate", label: "লেনদেন (B/E/রপ্তানি) তারিখ", type: "date" },
+      ],
+    },
+    {
+      id: "val-hs-entitlement",
+      title: "HS code entitlement",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "customs-act-13",
+      formula: "আমদানিকৃত প্রতিটি HS code অনুমোদিত entitlement তালিকায় আছে কি",
+      inputs: [
+        { key: "entitledHs", label: "অনুমোদিত HS code (কমা/স্পেস)", type: "text" },
+        { key: "importedHs", label: "আমদানিকৃত HS code (কমা/স্পেস)", type: "text" },
+      ],
+    },
+  ],
+
   // Working Paper-এর সেকশন কাঠামো (রিপোর্টেও এই ক্রম অনুসৃত হয়)
   workingPaperSections: [
     "প্রতিষ্ঠান পরিচিতি ও বন্ড লাইসেন্স তথ্য",

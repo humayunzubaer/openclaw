@@ -6,6 +6,7 @@
 import { resolveLegalRef } from "../knowledge/bond-legal.js";
 
 const bdt = (n) => Number(n || 0).toLocaleString("en-BD");
+const bnNum = (n) => String(n).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[d]);
 
 // page-level citation: "নথি (পৃ.N)" — finding.evidence থাকলে সেটা, নাহলে evidenceDocIds ফলব্যাক
 function evidenceNames(finding, documents) {
@@ -48,8 +49,22 @@ function numericSection(numeric) {
   return lines.join("\n");
 }
 
+/** মেয়াদ/Entitlement যাচাই → markdown সেকশন (computed rows only) */
+function validitySection(validity) {
+  const results = (validity?.results ?? []).filter((r) => r.status === "flag" || r.status === "ok");
+  if (!results.length) return "";
+  const lines = [];
+  lines.push("| যাচাই | ফলাফল | বিবরণ |");
+  lines.push("|-------|-------|-------|");
+  for (const r of results) {
+    const status = r.status === "flag" ? `⚠ ${SEV_LABEL[r.severity] ?? r.severity}` : "✓ ঠিক আছে";
+    lines.push(`| ${r.title} | ${status} | ${(r.observation || "").replace(/\n/g, " ")} |`);
+  }
+  return lines.join("\n");
+}
+
 /** Working Paper — বিস্তারিত কার্যপত্র */
-export function buildWorkingPaper({ audit, module, findings, documents, workingPaper, numeric }) {
+export function buildWorkingPaper({ audit, module, findings, documents, workingPaper, numeric, validity }) {
   const lines = [];
   lines.push(`# Working Paper — ${module.title}`);
   lines.push("");
@@ -63,6 +78,14 @@ export function buildWorkingPaper({ audit, module, findings, documents, workingP
     lines.push(`## ${section}`);
     const note = workingPaper?.sections?.[section];
     lines.push(note?.trim() ? note : "_(নোট যুক্ত করুন)_");
+    lines.push("");
+  }
+
+  const valSec = validitySection(validity);
+  if (valSec) {
+    lines.push("## মেয়াদ / Entitlement যাচাই");
+    lines.push("");
+    lines.push(valSec);
     lines.push("");
   }
 
@@ -109,7 +132,7 @@ export function buildNoteSheet({ audit, module, findings }) {
 }
 
 /** Final Audit Report */
-export function buildFinalReport({ audit, module, findings, documents, numeric }) {
+export function buildFinalReport({ audit, module, findings, documents, numeric, validity }) {
   const total = findings.reduce((s, f) => s + Number(f.revenueImplication || 0), 0);
   const lines = [];
   lines.push(`# চূড়ান্ত নিরীক্ষা প্রতিবেদন (Final Audit Report)`);
@@ -137,17 +160,24 @@ export function buildFinalReport({ audit, module, findings, documents, numeric }
     if (ev) lines.push(`**Evidence:** ${ev}`);
     lines.push("");
   });
+  let sec = 4;
+  const valSec = validitySection(validity);
+  if (valSec) {
+    lines.push(`## ${bnNum(sec++)}. মেয়াদ / Entitlement যাচাই`);
+    lines.push(valSec);
+    lines.push("");
+  }
   const numSec = numericSection(numeric);
   if (numSec) {
-    lines.push("## ৪. সংখ্যাগত যাচাই (Auto-check)");
+    lines.push(`## ${bnNum(sec++)}. সংখ্যাগত যাচাই (Auto-check)`);
     lines.push(numSec);
     lines.push("");
   }
 
-  lines.push(`## ${numSec ? "৫" : "৪"}. রাজস্ব প্রভাব (সারসংক্ষেপ)`);
+  lines.push(`## ${bnNum(sec++)}. রাজস্ব প্রভাব (সারসংক্ষেপ)`);
   lines.push(`চিহ্নিত (গৃহীত) অসঙ্গতির ভিত্তিতে সম্ভাব্য মোট আদায়যোগ্য/পরিহারযোগ্য রাজস্ব: **BDT ${bdt(total)}**।`);
   lines.push("");
-  lines.push(`## ${numSec ? "৬" : "৫"}. সুপারিশ`);
+  lines.push(`## ${bnNum(sec++)}. সুপারিশ`);
   lines.push("_(সুপারিশ এখানে যুক্ত করুন)_");
   return lines.join("\n");
 }

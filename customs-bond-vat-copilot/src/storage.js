@@ -43,6 +43,7 @@ const paths = (id) => ({
   evidence: path.join(auditDir(id), "evidence.json"),
   workingPaper: path.join(auditDir(id), "working-paper.json"),
   numeric: path.join(auditDir(id), "numeric.json"),
+  validity: path.join(auditDir(id), "validity.json"),
   reportDir: path.join(auditDir(id), "report"),
 });
 
@@ -238,6 +239,18 @@ export async function getEvidence(auditId) {
 
 export async function saveEvidence(auditId, data) {
   await writeJson(paths(auditId).evidence, { applied: data.applied ?? {}, log: data.log ?? [] });
+  return data;
+}
+
+// ---- Validity (মেয়াদ/entitlement) checks ----
+
+export async function getValidity(auditId) {
+  return readJson(paths(auditId).validity, { inputs: {}, results: [], summary: null, updatedAt: null });
+}
+
+export async function saveValidity(auditId, { inputs, results, summary }) {
+  const data = { inputs: inputs ?? {}, results: results ?? [], summary: summary ?? null, updatedAt: new Date().toISOString() };
+  await writeJson(paths(auditId).validity, data);
   return data;
 }
 
