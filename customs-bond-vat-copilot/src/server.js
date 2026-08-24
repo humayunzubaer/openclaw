@@ -209,12 +209,22 @@ const routes = [
     const wanted = Array.isArray(checkIds) && checkIds.length ? new Set(checkIds) : null;
     const existing = await store.listFindings(id);
     const seen = new Set(existing.filter((f) => f.source === "numeric").map((f) => f.title));
+    // applied evidence → per-check, যাতে promoted finding নিজে থেকেই উৎস নথি/পৃষ্ঠা cite করে
+    const ev = await store.getEvidence(id);
+    const evByCheck = {};
+    for (const rec of Object.values(ev.applied ?? {})) (evByCheck[rec.checkId] ??= []).push(rec);
     let added = 0, skipped = 0;
     for (const r of saved.results ?? []) {
       if (r.status !== "flag") continue;
       if (wanted && !wanted.has(r.id)) continue;
       if (seen.has(r.title)) { skipped++; continue; }
-      await store.addFinding(id, resultToFinding(r));
+      const finding = resultToFinding(r);
+      finding.evidence = (evByCheck[r.id] ?? []).map((rec) => ({
+        docId: rec.docId, docFilename: rec.docFilename, page: rec.page,
+        sourceText: rec.sourceText, checkId: rec.checkId, inputKey: rec.inputKey,
+        value: rec.value, confidence: rec.confidence,
+      }));
+      await store.addFinding(id, finding);
       seen.add(r.title);
       added++;
     }

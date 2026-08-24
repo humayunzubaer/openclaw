@@ -7,9 +7,18 @@ import { resolveLegalRef } from "../knowledge/bond-legal.js";
 
 const bdt = (n) => Number(n || 0).toLocaleString("en-BD");
 
+// page-level citation: "নথি (পৃ.N)" — finding.evidence থাকলে সেটা, নাহলে evidenceDocIds ফলব্যাক
 function evidenceNames(finding, documents) {
-  const ids = finding.evidenceDocIds ?? [];
-  return ids
+  const ev = finding.evidence ?? [];
+  if (ev.length) {
+    return ev
+      .map((e) => {
+        const name = e.docFilename || documents.find((d) => d.id === e.docId)?.filename || e.docId || "নথি";
+        return e.page != null ? `${name} (পৃ.${e.page})` : name;
+      })
+      .join("; ");
+  }
+  return (finding.evidenceDocIds ?? [])
     .map((id) => documents.find((d) => d.id === id)?.filename)
     .filter(Boolean)
     .join(", ");

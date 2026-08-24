@@ -142,8 +142,31 @@ export async function listFindings(auditId) {
   return readJson(paths(auditId).findings, []);
 }
 
+/** page-level evidence entry → পরিষ্কার শেপ; document/page/source/provenance ধরে রাখে */
+function normalizeEvidence(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((e) => ({
+      docId: e.docId ?? null,
+      docFilename: e.docFilename ?? null,
+      page: e.page ?? null,
+      sourceText: e.sourceText ?? "",
+      checkId: e.checkId ?? null,
+      inputKey: e.inputKey ?? null,
+      value: e.value ?? null,
+      confidence: e.confidence ?? null,
+    }))
+    .filter((e) => e.docId || e.docFilename);
+}
+
+const docIdsOf = (evidence, fallback) => {
+  const ids = [...new Set(evidence.map((e) => e.docId).filter(Boolean))];
+  return ids.length ? ids : fallback ?? [];
+};
+
 export async function addFinding(auditId, finding) {
   const findings = await listFindings(auditId);
+  const evidence = normalizeEvidence(finding.evidence);
   const item = {
     id: newId("find"),
     checklistId: finding.checklistId ?? null,
@@ -154,7 +177,8 @@ export async function addFinding(auditId, finding) {
     revenueImplication: finding.revenueImplication ?? 0,
     severity: finding.severity ?? "medium", // low | medium | high
     source: finding.source ?? "manual", // manual | numeric | ai
-    evidenceDocIds: finding.evidenceDocIds ?? [],
+    evidence, // page-level [{docId,docFilename,page,sourceText,checkId,inputKey,value,confidence}]
+    evidenceDocIds: docIdsOf(evidence, finding.evidenceDocIds),
     createdAt: new Date().toISOString(),
   };
   findings.push(item);
@@ -166,9 +190,14 @@ export async function updateFinding(auditId, findingId, patch) {
   const findings = await listFindings(auditId);
   const idx = findings.findIndex((f) => f.id === findingId);
   if (idx === -1) return null;
-  findings[idx] = { ...findings[idx], ...patch, id: findingId };
+  const next = { ...findings[idx], ...patch, id: findingId };
+  if ("evidence" in patch) {
+    next.evidence = normalizeEvidence(patch.evidence);
+    next.evidenceDocIds = docIdsOf(next.evidence, next.evidenceDocIds);
+  }
+  findings[idx] = next;
   await writeJson(paths(auditId).findings, findings);
-  return findings[idx];
+  return next;
 }
 
 export async function deleteFinding(auditId, findingId) {

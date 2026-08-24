@@ -138,3 +138,6 @@ table { display: block; overflow-x: auto; white-space: nowrap; }
 .evi-field { max-width: 420px; }
 .evi-trail { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .evi-trail th, .evi-trail td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+
+/* ---------- Finding evidence section ---------- */
+.ev-section { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }

@@ -174,7 +174,11 @@ function bindDocActions(body, id, module) {
 }
 
 async function renderFindings(body, id, module) {
-  const findings = await api.get(`/api/audits/${id}/findings`);
+  const [findings, documents] = await Promise.all([
+    api.get(`/api/audits/${id}/findings`),
+    api.get(`/api/audits/${id}/documents`),
+  ]);
+  const redo = () => renderFindings(body, id, module);
   body.innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h3 style="margin:0">Findings (${findings.length})</h3>
@@ -183,40 +187,50 @@ async function renderFindings(body, id, module) {
         <button class="btn btn-primary" id="add-finding">+ Finding যোগ</button>
       </div>
     </div>
-    <div id="find-list">${findings.length?findings.map((f)=>findingRow(f, module)).join(""):`<div class="empty">কোনো finding নেই। checklist থেকে খসড়া তৈরি করুন বা ম্যানুয়ালি যোগ করুন।</div>`}</div>`;
+    <div id="find-list">${findings.length?findings.map((f)=>findingRow(f)).join(""):`<div class="empty">কোনো finding নেই। checklist থেকে খসড়া তৈরি করুন বা ম্যানুয়ালি যোগ করুন।</div>`}</div>`;
 
-  document.getElementById("add-finding").onclick = () => addOrEditFinding(id, module, null, () => renderFindings(body, id, module));
+  document.getElementById("add-finding").onclick = () => addOrEditFinding(id, module, null, redo, documents);
   document.getElementById("ai-draft").onclick = async () => {
     if (!confirm("সেটিংসে নির্বাচিত provider দিয়ে খসড়া findings তৈরি হবে। এগুলো সম্পাদনাযোগ্য। এগিয়ে যাবেন?")) return;
     const r = await api.send("POST", `/api/audits/${id}/analyze`, {});
     if (r.error) return alert("বিশ্লেষণ ব্যর্থ: " + (r.message || r.error));
     for (const d of r.drafts) await api.send("POST", `/api/audits/${id}/findings`, d);
-    renderFindings(body, id, module);
+    redo();
   };
   body.querySelectorAll(".finding-item").forEach((el) => {
     const fid = el.dataset.find;
-    el.querySelector(".act-edit").onclick = () => addOrEditFinding(id, module, findings.find((f)=>f.id===fid), ()=>renderFindings(body,id,module));
-    el.querySelector(".act-del").onclick = async () => { if(confirm("মুছে ফেলবেন?")){ await api.send("DELETE", `/api/audits/${id}/findings/${fid}`); renderFindings(body,id,module);} };
+    el.querySelector(".act-edit").onclick = () => addOrEditFinding(id, module, findings.find((f)=>f.id===fid), redo, documents);
+    el.querySelector(".act-del").onclick = async () => { if(confirm("মুছে ফেলবেন?")){ await api.send("DELETE", `/api/audits/${id}/findings/${fid}`); redo();} };
   });
 }
 
-function findingRow(f, module) {
+function evidenceChips(f) {
+  const ev = f.evidence ?? [];
+  if (!ev.length) return "";
+  return `<div class="row" style="flex-wrap:wrap;gap:4px;margin-top:6px">${ev.map((e) =>
+    `<span class="prov-badge" title="উৎস: ${esc(e.sourceText || "")}">📄 ${esc(e.docFilename || "নথি")}${e.page != null ? ` · পৃ.${e.page}` : ""}${e.confidence != null ? ` · ${Math.round(e.confidence * 100)}%` : ""}</span>`).join("")}</div>`;
+}
+
+function findingRow(f) {
   return `<div class="finding-item ${esc(f.severity)}" data-find="${f.id}">
     <div class="row" style="justify-content:space-between">
       <strong>${esc(f.title || f.area)}</strong>
       <div class="row"><span class="pill">${esc(f.area)}</span>
+        ${f.source && f.source !== "manual" ? `<span class="pill">${esc(f.source)}</span>` : ""}
         <button class="btn btn-ghost btn-sm act-edit">সম্পাদনা</button>
         <button class="btn btn-ghost btn-sm act-del">মুছুন</button></div>
     </div>
     <div style="margin-top:6px">${esc(f.observation)}</div>
     <div class="row muted" style="margin-top:6px;font-size:13px">
       ${f.legalRef?`আইন: ${esc(f.legalRef)} · `:""}রাজস্ব: ৳${bdt(f.revenueImplication)} · severity: ${esc(f.severity)}</div>
+    ${evidenceChips(f)}
   </div>`;
 }
 
-function addOrEditFinding(id, module, existing, done) {
+function addOrEditFinding(id, module, existing, done, documents = []) {
   const areas = [...new Set(module.checklist.map((c)=>c.area))];
   const legalOpts = [...new Set(module.checklist.map((c)=>c.legalRef).filter(Boolean))];
+  let evidence = (existing?.evidence ?? []).map((e) => ({ ...e }));
   const dlg = document.createElement("dialog");
   dlg.innerHTML = `<form method="dialog">
     <h3>${existing?"Finding সম্পাদনা":"নতুন Finding"}</h3>
@@ -228,13 +242,49 @@ function addOrEditFinding(id, module, existing, done) {
       <label style="flex:1">Severity<select name="severity">${["low","medium","high"].map((s)=>`<option ${(existing?.severity||"medium")===s?"selected":""}>${s}</option>`).join("")}</select></label>
     </div>
     <label>রাজস্ব প্রভাব (BDT)<input name="revenueImplication" type="number" value="${existing?.revenueImplication||0}" /></label>
+    <div class="ev-section">
+      <strong style="font-size:13px">Evidence — নথি + পৃষ্ঠা</strong>
+      <div id="ev-list" style="margin:6px 0"></div>
+      ${documents.length ? `<div class="row" style="gap:6px;flex-wrap:wrap">
+        <select id="ev-doc" style="flex:2;min-width:180px">${documents.map((d,i)=>`<option value="${i}">${esc(d.filename)}</option>`).join("")}</select>
+        <input id="ev-page" type="number" min="1" placeholder="পৃষ্ঠা" style="max-width:90px" />
+        <button type="button" class="btn btn-ghost btn-sm" id="ev-add">＋ যোগ</button>
+      </div>
+      <input id="ev-src" placeholder="উৎস টেক্সট (ঐচ্ছিক)" style="margin-top:6px" />`
+        : `<div class="muted" style="font-size:12.5px">নথি নেই — "📁 নথি" ট্যাবে আপলোড করলে এখানে যুক্ত করা যাবে।</div>`}
+    </div>
     <div class="row-end"><button type="button" class="btn btn-ghost" id="fc">বাতিল</button><button class="btn btn-primary">সংরক্ষণ</button></div>
   </form>`;
   document.body.appendChild(dlg); dlg.showModal();
+
+  const evList = dlg.querySelector("#ev-list");
+  const renderEv = () => {
+    evList.innerHTML = evidence.length
+      ? evidence.map((e, i) => `<div class="row" style="justify-content:space-between;gap:6px;border:1px solid var(--line);border-radius:6px;padding:4px 8px;margin-bottom:4px">
+          <span style="font-size:12.5px">📄 ${esc(e.docFilename || "নথি")}${e.page != null ? ` · পৃ.${e.page}` : ""}${e.confidence != null ? ` · ${Math.round(e.confidence*100)}%` : ""}</span>
+          <button type="button" class="btn btn-ghost btn-sm ev-rm" data-i="${i}">✕</button></div>`).join("")
+      : `<div class="muted" style="font-size:12px">এখনো কোনো evidence যুক্ত নেই।</div>`;
+    evList.querySelectorAll(".ev-rm").forEach((b) => b.onclick = () => { evidence.splice(Number(b.dataset.i), 1); renderEv(); });
+  };
+  renderEv();
+
+  if (documents.length) {
+    dlg.querySelector("#ev-add").onclick = () => {
+      const d = documents[Number(dlg.querySelector("#ev-doc").value)];
+      const pageRaw = dlg.querySelector("#ev-page").value;
+      const src = dlg.querySelector("#ev-src").value;
+      if (!d) return;
+      evidence.push({ docId: d.id, docFilename: d.filename, page: pageRaw === "" ? null : Number(pageRaw), sourceText: src });
+      dlg.querySelector("#ev-page").value = ""; dlg.querySelector("#ev-src").value = "";
+      renderEv();
+    };
+  }
+
   dlg.querySelector("#fc").onclick = () => { dlg.close(); dlg.remove(); };
   dlg.querySelector("form").onsubmit = async () => {
     const data = Object.fromEntries(new FormData(dlg.querySelector("form")));
     data.revenueImplication = Number(data.revenueImplication) || 0;
+    data.evidence = evidence;
     if (existing) await api.send("PATCH", `/api/audits/${id}/findings/${existing.id}`, data);
     else await api.send("POST", `/api/audits/${id}/findings`, data);
     dlg.close(); dlg.remove(); done();

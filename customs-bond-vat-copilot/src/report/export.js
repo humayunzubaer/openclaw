@@ -8,6 +8,21 @@ import { resolveLegalRef } from "../knowledge/bond-legal.js";
 const bdt = (n) => Number(n || 0).toLocaleString("en-BD");
 const xml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c]));
 
+// page-level evidence citation: "নথি (পৃ.N)"; evidence অ্যারে না থাকলে docId ফলব্যাক
+function evidenceCite(finding, documents = []) {
+  const ev = finding.evidence ?? [];
+  if (ev.length) {
+    return ev.map((e) => {
+      const name = e.docFilename || documents.find((d) => d.id === e.docId)?.filename || e.docId || "নথি";
+      return e.page != null ? `${name} (পৃ.${e.page})` : name;
+    }).join("; ");
+  }
+  return (finding.evidenceDocIds ?? [])
+    .map((id) => documents.find((d) => d.id === id)?.filename)
+    .filter(Boolean)
+    .join(", ");
+}
+
 // ---------------- Word (.doc via HTML) ----------------
 // Word HTML-ভিত্তিক .doc নিখুঁতভাবে খোলে; বাংলা ও টেবিল সংরক্ষিত থাকে।
 
@@ -38,6 +53,7 @@ export function toWordDoc({ audit, module, findings, documents, workingPaper, nu
       <td>${xml(f.observation || f.title)}</td>
       <td>${xml(ref)}</td>
       <td style="text-align:right">${bdt(f.revenueImplication)}</td>
+      <td>${xml(evidenceCite(f, documents) || "—")}</td>
     </tr>`;
   }).join("");
 
@@ -68,8 +84,8 @@ export function toWordDoc({ audit, module, findings, documents, workingPaper, nu
   ${wpSections}
   ${numericWordTable(numeric)}
   <h2>পর্যবেক্ষণসমূহ (Findings)</h2>
-  <table><thead><tr><th>#</th><th>Area</th><th>পর্যবেক্ষণ</th><th>আইন</th><th>রাজস্ব (BDT)</th></tr></thead>
-  <tbody>${rows || `<tr><td colspan="5">কোনো finding নেই।</td></tr>`}</tbody></table>
+  <table><thead><tr><th>#</th><th>Area</th><th>পর্যবেক্ষণ</th><th>আইন</th><th>রাজস্ব (BDT)</th><th>Evidence</th></tr></thead>
+  <tbody>${rows || `<tr><td colspan="6">কোনো finding নেই।</td></tr>`}</tbody></table>
   <p style="margin-top:14px"><b>সম্ভাব্য মোট রাজস্ব প্রভাব: BDT ${bdt(total)}</b></p>
 </body></html>`;
 }
@@ -85,10 +101,10 @@ export function toPrintablePdfHtml(ctx) {
 // ---------------- Excel (.xlsx, zero-dependency) ----------------
 
 /** findings + numeric + summary → xlsx Buffer */
-export function toXlsx({ audit, module, findings, numeric }) {
+export function toXlsx({ audit, module, findings, documents, numeric }) {
   const total = findings.reduce((s, f) => s + Number(f.revenueImplication || 0), 0);
 
-  const headerRow = ["#", "Area", "পর্যবেক্ষণ", "আইন", "Severity", "রাজস্ব (BDT)"];
+  const headerRow = ["#", "Area", "পর্যবেক্ষণ", "আইন", "Severity", "রাজস্ব (BDT)", "Evidence"];
   const dataRows = findings.map((f, i) => [
     i + 1,
     f.area || "",
@@ -96,6 +112,7 @@ export function toXlsx({ audit, module, findings, numeric }) {
     (f.legalRef ? resolveLegalRef(f.legalRef)?.citation ?? f.legalRef : ""),
     f.severity || "",
     Number(f.revenueImplication || 0),
+    evidenceCite(f, documents),
   ]);
   const metaRows = [
     ["প্রতিষ্ঠান", audit.institution || ""],
