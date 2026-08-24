@@ -74,7 +74,7 @@ async function viewAudit(id, tab = "dashboard") {
       <div><h2>${esc(audit.institution || "নামহীন")}</h2><div class="muted">${esc(module.title)}</div></div>
     </div>
     <div class="tabs" id="tabs">
-      ${["dashboard","documents","findings","working-paper","reports","settings"].map((t)=>
+      ${["dashboard","documents","findings","numeric","validity","working-paper","reports","settings"].map((t)=>
         `<div class="tab ${t===tab?"active":""}" data-tab="${t}">${tabLabel(t)}</div>`).join("")}
     </div>
     <div id="tab-body"><div class="loading">লোড হচ্ছে…</div></div>`;
@@ -85,12 +85,14 @@ async function viewAudit(id, tab = "dashboard") {
   if (tab === "dashboard") return renderDashboard(body, id, module);
   if (tab === "documents") return renderDocuments(body, id, module);
   if (tab === "findings") return renderFindings(body, id, module);
+  if (tab === "numeric") return renderNumeric(body, id, module);
+  if (tab === "validity") return renderValidity(body, id, module);
   if (tab === "working-paper") return renderWorkingPaper(body, id, module);
   if (tab === "reports") return renderReports(body, id);
   if (tab === "settings") return renderSettings(body);
 }
 
-const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট", settings:"⚙️ সেটিংস" }[t]);
+const tabLabel = (t) => ({ dashboard:"📊 ড্যাশবোর্ড", documents:"📁 নথি", findings:"🔍 Findings", numeric:"🧮 সংখ্যাগত যাচাই", validity:"📅 মেয়াদ যাচাই", "working-paper":"📝 Working Paper", reports:"📄 রিপোর্ট", settings:"⚙️ সেটিংস" }[t]);
 
 async function renderDashboard(body, id, module) {
   const [docs, findings] = await Promise.all([api.get(`/api/audits/${id}/documents`), api.get(`/api/audits/${id}/findings`)]);
@@ -173,7 +175,11 @@ function bindDocActions(body, id, module) {
 }
 
 async function renderFindings(body, id, module) {
-  const findings = await api.get(`/api/audits/${id}/findings`);
+  const [findings, documents] = await Promise.all([
+    api.get(`/api/audits/${id}/findings`),
+    api.get(`/api/audits/${id}/documents`),
+  ]);
+  const redo = () => renderFindings(body, id, module);
   body.innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:14px">
       <h3 style="margin:0">Findings (${findings.length})</h3>
@@ -182,40 +188,50 @@ async function renderFindings(body, id, module) {
         <button class="btn btn-primary" id="add-finding">+ Finding যোগ</button>
       </div>
     </div>
-    <div id="find-list">${findings.length?findings.map((f)=>findingRow(f, module)).join(""):`<div class="empty">কোনো finding নেই। checklist থেকে খসড়া তৈরি করুন বা ম্যানুয়ালি যোগ করুন।</div>`}</div>`;
+    <div id="find-list">${findings.length?findings.map((f)=>findingRow(f)).join(""):`<div class="empty">কোনো finding নেই। checklist থেকে খসড়া তৈরি করুন বা ম্যানুয়ালি যোগ করুন।</div>`}</div>`;
 
-  document.getElementById("add-finding").onclick = () => addOrEditFinding(id, module, null, () => renderFindings(body, id, module));
+  document.getElementById("add-finding").onclick = () => addOrEditFinding(id, module, null, redo, documents);
   document.getElementById("ai-draft").onclick = async () => {
     if (!confirm("সেটিংসে নির্বাচিত provider দিয়ে খসড়া findings তৈরি হবে। এগুলো সম্পাদনাযোগ্য। এগিয়ে যাবেন?")) return;
     const r = await api.send("POST", `/api/audits/${id}/analyze`, {});
     if (r.error) return alert("বিশ্লেষণ ব্যর্থ: " + (r.message || r.error));
     for (const d of r.drafts) await api.send("POST", `/api/audits/${id}/findings`, d);
-    renderFindings(body, id, module);
+    redo();
   };
   body.querySelectorAll(".finding-item").forEach((el) => {
     const fid = el.dataset.find;
-    el.querySelector(".act-edit").onclick = () => addOrEditFinding(id, module, findings.find((f)=>f.id===fid), ()=>renderFindings(body,id,module));
-    el.querySelector(".act-del").onclick = async () => { if(confirm("মুছে ফেলবেন?")){ await api.send("DELETE", `/api/audits/${id}/findings/${fid}`); renderFindings(body,id,module);} };
+    el.querySelector(".act-edit").onclick = () => addOrEditFinding(id, module, findings.find((f)=>f.id===fid), redo, documents);
+    el.querySelector(".act-del").onclick = async () => { if(confirm("মুছে ফেলবেন?")){ await api.send("DELETE", `/api/audits/${id}/findings/${fid}`); redo();} };
   });
 }
 
-function findingRow(f, module) {
+function evidenceChips(f) {
+  const ev = f.evidence ?? [];
+  if (!ev.length) return "";
+  return `<div class="row" style="flex-wrap:wrap;gap:4px;margin-top:6px">${ev.map((e) =>
+    `<span class="prov-badge" title="উৎস: ${esc(e.sourceText || "")}">📄 ${esc(e.docFilename || "নথি")}${e.page != null ? ` · পৃ.${e.page}` : ""}${e.confidence != null ? ` · ${Math.round(e.confidence * 100)}%` : ""}</span>`).join("")}</div>`;
+}
+
+function findingRow(f) {
   return `<div class="finding-item ${esc(f.severity)}" data-find="${f.id}">
     <div class="row" style="justify-content:space-between">
       <strong>${esc(f.title || f.area)}</strong>
       <div class="row"><span class="pill">${esc(f.area)}</span>
+        ${f.source && f.source !== "manual" ? `<span class="pill">${esc(f.source)}</span>` : ""}
         <button class="btn btn-ghost btn-sm act-edit">সম্পাদনা</button>
         <button class="btn btn-ghost btn-sm act-del">মুছুন</button></div>
     </div>
     <div style="margin-top:6px">${esc(f.observation)}</div>
     <div class="row muted" style="margin-top:6px;font-size:13px">
       ${f.legalRef?`আইন: ${esc(f.legalRef)} · `:""}রাজস্ব: ৳${bdt(f.revenueImplication)} · severity: ${esc(f.severity)}</div>
+    ${evidenceChips(f)}
   </div>`;
 }
 
-function addOrEditFinding(id, module, existing, done) {
+function addOrEditFinding(id, module, existing, done, documents = []) {
   const areas = [...new Set(module.checklist.map((c)=>c.area))];
   const legalOpts = [...new Set(module.checklist.map((c)=>c.legalRef).filter(Boolean))];
+  let evidence = (existing?.evidence ?? []).map((e) => ({ ...e }));
   const dlg = document.createElement("dialog");
   dlg.innerHTML = `<form method="dialog">
     <h3>${existing?"Finding সম্পাদনা":"নতুন Finding"}</h3>
@@ -227,17 +243,339 @@ function addOrEditFinding(id, module, existing, done) {
       <label style="flex:1">Severity<select name="severity">${["low","medium","high"].map((s)=>`<option ${(existing?.severity||"medium")===s?"selected":""}>${s}</option>`).join("")}</select></label>
     </div>
     <label>রাজস্ব প্রভাব (BDT)<input name="revenueImplication" type="number" value="${existing?.revenueImplication||0}" /></label>
+    <div class="ev-section">
+      <strong style="font-size:13px">Evidence — নথি + পৃষ্ঠা</strong>
+      <div id="ev-list" style="margin:6px 0"></div>
+      ${documents.length ? `<div class="row" style="gap:6px;flex-wrap:wrap">
+        <select id="ev-doc" style="flex:2;min-width:180px">${documents.map((d,i)=>`<option value="${i}">${esc(d.filename)}</option>`).join("")}</select>
+        <input id="ev-page" type="number" min="1" placeholder="পৃষ্ঠা" style="max-width:90px" />
+        <button type="button" class="btn btn-ghost btn-sm" id="ev-add">＋ যোগ</button>
+      </div>
+      <input id="ev-src" placeholder="উৎস টেক্সট (ঐচ্ছিক)" style="margin-top:6px" />`
+        : `<div class="muted" style="font-size:12.5px">নথি নেই — "📁 নথি" ট্যাবে আপলোড করলে এখানে যুক্ত করা যাবে।</div>`}
+    </div>
     <div class="row-end"><button type="button" class="btn btn-ghost" id="fc">বাতিল</button><button class="btn btn-primary">সংরক্ষণ</button></div>
   </form>`;
   document.body.appendChild(dlg); dlg.showModal();
+
+  const evList = dlg.querySelector("#ev-list");
+  const renderEv = () => {
+    evList.innerHTML = evidence.length
+      ? evidence.map((e, i) => `<div class="row" style="justify-content:space-between;gap:6px;border:1px solid var(--line);border-radius:6px;padding:4px 8px;margin-bottom:4px">
+          <span style="font-size:12.5px">📄 ${esc(e.docFilename || "নথি")}${e.page != null ? ` · পৃ.${e.page}` : ""}${e.confidence != null ? ` · ${Math.round(e.confidence*100)}%` : ""}</span>
+          <button type="button" class="btn btn-ghost btn-sm ev-rm" data-i="${i}">✕</button></div>`).join("")
+      : `<div class="muted" style="font-size:12px">এখনো কোনো evidence যুক্ত নেই।</div>`;
+    evList.querySelectorAll(".ev-rm").forEach((b) => b.onclick = () => { evidence.splice(Number(b.dataset.i), 1); renderEv(); });
+  };
+  renderEv();
+
+  if (documents.length) {
+    dlg.querySelector("#ev-add").onclick = () => {
+      const d = documents[Number(dlg.querySelector("#ev-doc").value)];
+      const pageRaw = dlg.querySelector("#ev-page").value;
+      const src = dlg.querySelector("#ev-src").value;
+      if (!d) return;
+      evidence.push({ docId: d.id, docFilename: d.filename, page: pageRaw === "" ? null : Number(pageRaw), sourceText: src });
+      dlg.querySelector("#ev-page").value = ""; dlg.querySelector("#ev-src").value = "";
+      renderEv();
+    };
+  }
+
   dlg.querySelector("#fc").onclick = () => { dlg.close(); dlg.remove(); };
   dlg.querySelector("form").onsubmit = async () => {
     const data = Object.fromEntries(new FormData(dlg.querySelector("form")));
     data.revenueImplication = Number(data.revenueImplication) || 0;
+    data.evidence = evidence;
     if (existing) await api.send("PATCH", `/api/audits/${id}/findings/${existing.id}`, data);
     else await api.send("POST", `/api/audits/${id}/findings`, data);
     dlg.close(); dlg.remove(); done();
   };
+}
+
+// ---------- Numeric auto-check ----------
+const SEV = { high: { l: "গুরুতর", c: "var(--high)" }, medium: { l: "মাঝারি", c: "var(--med,#b8860b)" }, low: { l: "স্বাভাবিক", c: "var(--ok,#2e7d32)" } };
+
+async function renderNumeric(body, id, module) {
+  const [data, evidence] = await Promise.all([
+    api.get(`/api/audits/${id}/numeric`),
+    api.get(`/api/audits/${id}/evidence`),
+  ]);
+  const specs = data.specs || [];
+  const inputs = data.inputs || {};
+  let results = data.results || [];
+  let applied = evidence.applied || {};
+  const resById = () => Object.fromEntries(results.map((r) => [r.id, r]));
+  const provKey = (cid, key) => `${cid}::${key}`;
+  const flatFields = specs.flatMap((s) => s.inputs.map((inp) => ({ checkId: s.id, checkTitle: s.title, inputKey: inp.key, inputLabel: inp.label })));
+
+  if (!specs.length) {
+    body.innerHTML = `<div class="empty">এই মডিউলে সংখ্যাগত check নেই।</div>`;
+    return;
+  }
+
+  const cards = specs.map((s) => {
+    const saved = inputs[s.id] || {};
+    const fields = s.inputs.map((inp) => `
+      <label class="num-field">${esc(inp.label)}${inp.unit ? ` <span class="muted">(${esc(inp.unit)})</span>` : ""}${inp.optional ? ' <span class="muted">— ঐচ্ছিক</span>' : ""}
+        <input type="number" step="any" inputmode="decimal" data-check="${s.id}" data-key="${inp.key}" value="${saved[inp.key] ?? ""}" />
+        <div class="prov" data-prov="${s.id}::${inp.key}"></div>
+      </label>`).join("");
+    return `<div class="card num-card" data-check="${s.id}">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><strong>${esc(s.title)}</strong><div class="muted" style="font-size:12.5px;margin-top:2px">${esc(s.area)} · ${esc(s.formula || "")}</div></div>
+        <button class="btn btn-ghost btn-sm act-promote" title="Finding হিসেবে যোগ">➕ Finding</button>
+      </div>
+      <div class="num-grid">${fields}</div>
+      <div class="num-result" data-result="${s.id}"></div>
+    </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div><h3 style="margin:0">🧮 সংখ্যাগত যাচাই</h3><div class="muted" style="font-size:13px">সংখ্যা বসান → হিসাব করুন। ব্যত্যয় পেলে "Finding" চেপে চূড়ান্ত রিপোর্টে নিন।</div></div>
+      <div class="row">
+        <button class="btn btn-ghost" id="num-evidence">🔍 নথি থেকে Evidence</button>
+        <button class="btn btn-ghost" id="num-trail">🧾 Trail</button>
+        <button class="btn btn-ghost" id="num-promote-all">flag → Findings</button>
+        <button class="btn btn-primary" id="num-compute">হিসাব করুন</button>
+      </div>
+    </div>
+    <div id="num-summary"></div>
+    <div class="grid">${cards}</div>`;
+
+  const renderResults = () => {
+    const map = resById();
+    body.querySelectorAll(".num-result").forEach((el) => {
+      const r = map[el.dataset.result];
+      if (!r || r.status === "insufficient") { el.innerHTML = r?.status === "insufficient" ? `<div class="muted" style="font-size:12.5px">${esc(r.observation)}</div>` : ""; return; }
+      const sev = SEV[r.severity] || SEV.low;
+      const badge = r.status === "flag" ? `<span class="pill" style="background:${sev.c};color:#fff">⚠ ${sev.l}</span>` : `<span class="pill" style="background:var(--ok,#2e7d32);color:#fff">✓ ব্যত্যয় নেই</span>`;
+      const rev = r.status === "flag" && Number(r.revenueImplication) ? ` · রাজস্ব: ৳${bdt(r.revenueImplication)}` : "";
+      el.innerHTML = `<div class="num-out ${r.status}">${badge}${rev}<div style="margin-top:4px">${esc(r.observation)}</div></div>`;
+    });
+    const flagged = results.filter((r) => r.status === "flag");
+    const subtotal = flagged.reduce((s, r) => s + Number(r.revenueImplication || 0), 0);
+    document.getElementById("num-summary").innerHTML = results.length
+      ? `<div class="stat-row"><div class="stat"><div class="n" style="color:var(--high)">${flagged.length}</div><div class="l">ব্যত্যয় চিহ্নিত</div></div>
+         <div class="stat"><div class="n">৳${bdt(subtotal)}</div><div class="l">সম্ভাব্য রাজস্ব (উপমোট)</div></div></div>`
+      : "";
+  };
+
+  const renderProvenance = () => {
+    body.querySelectorAll(".prov").forEach((el) => {
+      const pv = applied[el.dataset.prov];
+      el.innerHTML = pv
+        ? `<span class="prov-badge" title="উৎস: ${esc(pv.sourceText)}">📄 ${esc(pv.docFilename || "?")} · পৃ.${pv.page ?? "?"} · ${Math.round((pv.confidence ?? 0) * 100)}%</span>`
+        : "";
+    });
+  };
+  renderResults();
+  renderProvenance();
+
+  const collectInputs = () => {
+    const out = {};
+    body.querySelectorAll("input[data-check]").forEach((el) => {
+      const cid = el.dataset.check, key = el.dataset.key;
+      if (el.value === "") return;
+      (out[cid] ??= {})[key] = el.value;
+    });
+    return out;
+  };
+
+  document.getElementById("num-compute").onclick = async () => {
+    const btn = document.getElementById("num-compute");
+    btn.textContent = "হিসাব হচ্ছে…"; btn.disabled = true;
+    const r = await api.send("POST", `/api/audits/${id}/numeric`, { inputs: collectInputs() });
+    results = r.results || [];
+    const ev = await api.get(`/api/audits/${id}/evidence`); // manual override → provenance prune reflect
+    applied = ev.applied || {};
+    renderResults();
+    renderProvenance();
+    btn.textContent = "✓ হিসাব হয়েছে"; setTimeout(() => { btn.textContent = "হিসাব করুন"; btn.disabled = false; }, 1200);
+  };
+
+  const applyChip = async (chip, checkId, inputKey) => {
+    const resp = await api.send("POST", `/api/audits/${id}/evidence/apply`, { chip, checkId, inputKey });
+    if (resp.error) { alert("প্রয়োগ ব্যর্থ: " + resp.error); return false; }
+    const inp = body.querySelector(`input[data-check="${checkId}"][data-key="${inputKey}"]`);
+    if (inp) inp.value = chip.value;
+    applied[provKey(checkId, inputKey)] = resp.applied;
+    results = resp.numeric.results;
+    renderResults();
+    renderProvenance();
+    return true;
+  };
+
+  const fieldOptions = (selKey) =>
+    flatFields.map((f) => `<option value="${f.checkId}::${f.inputKey}" ${selKey === `${f.checkId}::${f.inputKey}` ? "selected" : ""}>${esc(f.checkTitle)} → ${esc(f.inputLabel)}</option>`).join("");
+
+  document.getElementById("num-evidence").onclick = async () => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "evi-dialog";
+    dlg.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">🔍 নথি থেকে Smart Evidence</h3><button class="btn btn-ghost btn-sm" id="evi-close">বন্ধ</button></div>
+      <div class="muted" style="font-size:13px;margin:6px 0 12px">OCR-করা নথি থেকে সংখ্যা তোলা হলো — প্রতিটি chip-এ document, পৃষ্ঠা, source টেক্সট, field-সাজেশন ও confidence আছে। সঠিক field বেছে "প্রয়োগ" চাপুন।</div>
+      <div id="evi-body"><div class="loading">স্ক্যান হচ্ছে…</div></div>`;
+    document.body.appendChild(dlg); dlg.showModal();
+    dlg.querySelector("#evi-close").onclick = () => { dlg.close(); dlg.remove(); };
+    const scan = await api.send("POST", `/api/audits/${id}/evidence/scan`, {});
+    const eb = dlg.querySelector("#evi-body");
+    if (!scan.totalChips) {
+      eb.innerHTML = `<div class="empty">OCR-করা নথিতে কোনো সংখ্যা পাওয়া যায়নি। আগে "📁 নথি" ট্যাবে OCR চালান।</div>`;
+      return;
+    }
+    const chipMap = {};
+    for (const g of scan.groups) chipMap[g.docId] = g.chips;
+    eb.innerHTML = scan.groups.map((g) => `
+      <div class="evi-group"><div class="evi-doc">📄 ${esc(g.filename)} <span class="muted">(${g.chips.length}টি সংখ্যা)</span></div>
+      ${g.chips.map((c, i) => {
+        const top = c.suggestions[0];
+        const conf = Math.round(c.confidence * 100);
+        const cc = conf >= 70 ? "var(--ok)" : conf >= 40 ? "var(--med,#b8860b)" : "var(--high)";
+        return `<div class="evi-chip" data-gi="${esc(g.docId)}" data-ci="${i}">
+          <div class="row" style="justify-content:space-between;align-items:flex-start">
+            <div><span class="evi-val">${bdt(c.value)}</span> <span class="muted">পৃ.${c.page}</span></div>
+            <span class="evi-conf" style="color:${cc}">confidence ${conf}%</span>
+          </div>
+          <div class="evi-src muted">“${esc(c.sourceText)}”</div>
+          <div class="row" style="margin-top:6px;gap:6px">
+            <select class="evi-field">${fieldOptions(top ? `${top.checkId}::${top.inputKey}` : "")}</select>
+            <button class="btn btn-primary btn-sm evi-apply">প্রয়োগ</button>
+          </div></div>`;
+      }).join("")}</div>`).join("");
+    eb.querySelectorAll(".evi-chip").forEach((el) => {
+      el.querySelector(".evi-apply").onclick = async (e) => {
+        const chip = chipMap[el.dataset.gi][Number(el.dataset.ci)];
+        const [checkId, inputKey] = el.querySelector(".evi-field").value.split("::");
+        e.target.textContent = "…"; e.target.disabled = true;
+        const okApply = await applyChip(chip, checkId, inputKey);
+        e.target.textContent = okApply ? "✓ প্রয়োগ হয়েছে" : "প্রয়োগ";
+        e.target.disabled = okApply;
+      };
+    });
+  };
+
+  document.getElementById("num-trail").onclick = async () => {
+    const ev = await api.get(`/api/audits/${id}/evidence`);
+    const dlg = document.createElement("dialog");
+    dlg.className = "evi-dialog";
+    const rows = (ev.log || []).slice().reverse().map((l) => `<tr>
+      <td>${l.appliedAt ? new Date(l.appliedAt).toLocaleString("en-CA") : "—"}</td>
+      <td>${esc(l.action)}${l.prevValue != null ? ` <span class="muted">(আগে ${bdt(l.prevValue)})</span>` : ""}</td>
+      <td>${esc(l.checkTitle || "")} → ${esc(l.inputLabel || "")}</td>
+      <td style="text-align:right">${bdt(l.value)}</td>
+      <td>${esc(l.docFilename || "—")} পৃ.${l.page ?? "—"}</td>
+      <td>${esc(l.auditor || "—")}</td></tr>`).join("");
+    dlg.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:0">🧾 Evidence audit trail</h3><button class="btn btn-ghost btn-sm" id="tr-close">বন্ধ</button></div>
+      ${rows ? `<div style="overflow:auto;margin-top:10px"><table class="evi-trail"><thead><tr><th>সময়</th><th>action</th><th>field</th><th>মান</th><th>উৎস</th><th>নিরীক্ষক</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">এখনো কোনো evidence প্রয়োগ হয়নি।</div>`}`;
+    document.body.appendChild(dlg); dlg.showModal();
+    dlg.querySelector("#tr-close").onclick = () => { dlg.close(); dlg.remove(); };
+  };
+
+  document.getElementById("num-promote-all").onclick = async () => {
+    if (!results.some((r) => r.status === "flag")) return alert("আগে হিসাব করুন — কোনো flag পাওয়া যায়নি।");
+    if (!confirm("সব flag হওয়া check Finding হিসেবে যোগ হবে (ডুপ্লিকেট বাদ)। এগিয়ে যাবেন?")) return;
+    const r = await api.send("POST", `/api/audits/${id}/numeric/to-findings`, {});
+    alert(`${r.added}টি Finding যোগ হয়েছে${r.skipped ? `, ${r.skipped}টি আগে থেকেই ছিল` : ""}।`);
+  };
+
+  body.querySelectorAll(".num-card").forEach((card) => {
+    card.querySelector(".act-promote").onclick = async () => {
+      const cid = card.dataset.check;
+      const r = resById()[cid];
+      if (!r || r.status !== "flag") return alert("এই check-এ কোনো ব্যত্যয় নেই (আগে হিসাব করুন)।");
+      const resp = await api.send("POST", `/api/audits/${id}/numeric/to-findings`, { checkIds: [cid] });
+      alert(resp.added ? "Finding হিসেবে যোগ হয়েছে।" : "আগে থেকেই যোগ করা আছে।");
+    };
+  });
+}
+
+// ---------- Validity (মেয়াদ/Entitlement) ----------
+async function renderValidity(body, id, module) {
+  const data = await api.get(`/api/audits/${id}/validity`);
+  const specs = data.specs || [];
+  const inputs = data.inputs || {};
+  let results = data.results || [];
+  const resById = () => Object.fromEntries(results.map((r) => [r.id, r]));
+
+  if (!specs.length) { body.innerHTML = `<div class="empty">এই মডিউলে মেয়াদ-যাচাই নেই।</div>`; return; }
+
+  const cards = specs.map((s) => {
+    const saved = inputs[s.id] || {};
+    const fields = s.inputs.map((inp) => `
+      <label class="num-field">${esc(inp.label)}${inp.optional ? ' <span class="muted">— ঐচ্ছিক</span>' : ""}
+        <input type="${inp.type === "date" ? "date" : "text"}" data-check="${s.id}" data-key="${inp.key}" value="${esc(saved[inp.key] ?? "")}" ${inp.type === "text" ? `placeholder="যেমন: 5208.11, 6109.10"` : ""} />
+      </label>`).join("");
+    return `<div class="card num-card" data-check="${s.id}">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><strong>${esc(s.title)}</strong><div class="muted" style="font-size:12.5px;margin-top:2px">${esc(s.area)} · ${esc(s.formula || "")}</div></div>
+        <button class="btn btn-ghost btn-sm act-promote" title="Finding হিসেবে যোগ">➕ Finding</button>
+      </div>
+      <div class="num-grid">${fields}</div>
+      <div class="num-result" data-result="${s.id}"></div>
+    </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div><h3 style="margin:0">📅 মেয়াদ / Entitlement যাচাই</h3><div class="muted" style="font-size:13px">তারিখ ও HS code বসান → যাচাই করুন। ব্যত্যয় পেলে "Finding" চেপে রিপোর্টে নিন।</div></div>
+      <div class="row">
+        <button class="btn btn-ghost" id="val-promote-all">flag → Findings</button>
+        <button class="btn btn-primary" id="val-check">যাচাই করুন</button>
+      </div>
+    </div>
+    <div id="val-summary"></div>
+    <div class="grid">${cards}</div>`;
+
+  const renderResults = () => {
+    const map = resById();
+    body.querySelectorAll(".num-result").forEach((el) => {
+      const r = map[el.dataset.result];
+      if (!r || r.status === "insufficient") { el.innerHTML = r?.status === "insufficient" ? `<div class="muted" style="font-size:12.5px">${esc(r.observation)}</div>` : ""; return; }
+      const sev = SEV[r.severity] || SEV.low;
+      const badge = r.status === "flag" ? `<span class="pill" style="background:${sev.c};color:#fff">⚠ ${sev.l}</span>` : `<span class="pill" style="background:var(--ok,#2e7d32);color:#fff">✓ ঠিক আছে</span>`;
+      el.innerHTML = `<div class="num-out ${r.status}">${badge}<div style="margin-top:4px">${esc(r.observation)}</div></div>`;
+    });
+    const flagged = results.filter((r) => r.status === "flag");
+    document.getElementById("val-summary").innerHTML = results.length
+      ? `<div class="stat-row"><div class="stat"><div class="n" style="color:var(--high)">${flagged.length}</div><div class="l">মেয়াদ/entitlement ব্যত্যয়</div></div></div>`
+      : "";
+  };
+  renderResults();
+
+  const collectInputs = () => {
+    const out = {};
+    body.querySelectorAll("input[data-check]").forEach((el) => {
+      if (el.value === "") return;
+      (out[el.dataset.check] ??= {})[el.dataset.key] = el.value;
+    });
+    return out;
+  };
+
+  document.getElementById("val-check").onclick = async () => {
+    const btn = document.getElementById("val-check");
+    btn.textContent = "যাচাই হচ্ছে…"; btn.disabled = true;
+    const r = await api.send("POST", `/api/audits/${id}/validity`, { inputs: collectInputs() });
+    results = r.results || [];
+    renderResults();
+    btn.textContent = "✓ যাচাই হয়েছে"; setTimeout(() => { btn.textContent = "যাচাই করুন"; btn.disabled = false; }, 1200);
+  };
+
+  document.getElementById("val-promote-all").onclick = async () => {
+    if (!results.some((r) => r.status === "flag")) return alert("আগে যাচাই করুন — কোনো flag পাওয়া যায়নি।");
+    if (!confirm("সব flag হওয়া যাচাই Finding হিসেবে যোগ হবে (ডুপ্লিকেট বাদ)। এগিয়ে যাবেন?")) return;
+    const r = await api.send("POST", `/api/audits/${id}/validity/to-findings`, {});
+    alert(`${r.added}টি Finding যোগ হয়েছে${r.skipped ? `, ${r.skipped}টি আগে থেকেই ছিল` : ""}।`);
+  };
+
+  body.querySelectorAll(".num-card").forEach((card) => {
+    card.querySelector(".act-promote").onclick = async () => {
+      const cid = card.dataset.check;
+      const r = resById()[cid];
+      if (!r || r.status !== "flag") return alert("এই যাচাইয়ে কোনো ব্যত্যয় নেই (আগে যাচাই করুন)।");
+      const resp = await api.send("POST", `/api/audits/${id}/validity/to-findings`, { checkIds: [cid] });
+      alert(resp.added ? "Finding হিসেবে যোগ হয়েছে।" : "আগে থেকেই যোগ করা আছে।");
+    };
+  });
 }
 
 async function renderWorkingPaper(body, id, module) {

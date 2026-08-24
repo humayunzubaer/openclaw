@@ -42,6 +42,8 @@ const paths = (id) => ({
   findings: path.join(auditDir(id), "findings.json"),
   evidence: path.join(auditDir(id), "evidence.json"),
   workingPaper: path.join(auditDir(id), "working-paper.json"),
+  numeric: path.join(auditDir(id), "numeric.json"),
+  validity: path.join(auditDir(id), "validity.json"),
   reportDir: path.join(auditDir(id), "report"),
 });
 
@@ -141,8 +143,31 @@ export async function listFindings(auditId) {
   return readJson(paths(auditId).findings, []);
 }
 
+/** page-level evidence entry → পরিষ্কার শেপ; document/page/source/provenance ধরে রাখে */
+function normalizeEvidence(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((e) => ({
+      docId: e.docId ?? null,
+      docFilename: e.docFilename ?? null,
+      page: e.page ?? null,
+      sourceText: e.sourceText ?? "",
+      checkId: e.checkId ?? null,
+      inputKey: e.inputKey ?? null,
+      value: e.value ?? null,
+      confidence: e.confidence ?? null,
+    }))
+    .filter((e) => e.docId || e.docFilename);
+}
+
+const docIdsOf = (evidence, fallback) => {
+  const ids = [...new Set(evidence.map((e) => e.docId).filter(Boolean))];
+  return ids.length ? ids : fallback ?? [];
+};
+
 export async function addFinding(auditId, finding) {
   const findings = await listFindings(auditId);
+  const evidence = normalizeEvidence(finding.evidence);
   const item = {
     id: newId("find"),
     checklistId: finding.checklistId ?? null,
@@ -152,7 +177,9 @@ export async function addFinding(auditId, finding) {
     legalRef: finding.legalRef ?? null,
     revenueImplication: finding.revenueImplication ?? 0,
     severity: finding.severity ?? "medium", // low | medium | high
-    evidenceDocIds: finding.evidenceDocIds ?? [],
+    source: finding.source ?? "manual", // manual | numeric | ai
+    evidence, // page-level [{docId,docFilename,page,sourceText,checkId,inputKey,value,confidence}]
+    evidenceDocIds: docIdsOf(evidence, finding.evidenceDocIds),
     createdAt: new Date().toISOString(),
   };
   findings.push(item);
@@ -164,9 +191,14 @@ export async function updateFinding(auditId, findingId, patch) {
   const findings = await listFindings(auditId);
   const idx = findings.findIndex((f) => f.id === findingId);
   if (idx === -1) return null;
-  findings[idx] = { ...findings[idx], ...patch, id: findingId };
+  const next = { ...findings[idx], ...patch, id: findingId };
+  if ("evidence" in patch) {
+    next.evidence = normalizeEvidence(patch.evidence);
+    next.evidenceDocIds = docIdsOf(next.evidence, next.evidenceDocIds);
+  }
+  findings[idx] = next;
   await writeJson(paths(auditId).findings, findings);
-  return findings[idx];
+  return next;
 }
 
 export async function deleteFinding(auditId, findingId) {
@@ -184,6 +216,41 @@ export async function getWorkingPaper(auditId) {
 
 export async function saveWorkingPaper(auditId, data) {
   await writeJson(paths(auditId).workingPaper, data);
+  return data;
+}
+
+// ---- Numeric auto-check (inputs + computed results) ----
+
+export async function getNumeric(auditId) {
+  return readJson(paths(auditId).numeric, { inputs: {}, results: [], summary: null, updatedAt: null });
+}
+
+export async function saveNumeric(auditId, { inputs, results, summary }) {
+  const data = { inputs: inputs ?? {}, results: results ?? [], summary: summary ?? null, updatedAt: new Date().toISOString() };
+  await writeJson(paths(auditId).numeric, data);
+  return data;
+}
+
+// ---- Smart Evidence Chips (applied provenance + append-only audit trail) ----
+
+export async function getEvidence(auditId) {
+  return readJson(paths(auditId).evidence, { applied: {}, log: [] });
+}
+
+export async function saveEvidence(auditId, data) {
+  await writeJson(paths(auditId).evidence, { applied: data.applied ?? {}, log: data.log ?? [] });
+  return data;
+}
+
+// ---- Validity (মেয়াদ/entitlement) checks ----
+
+export async function getValidity(auditId) {
+  return readJson(paths(auditId).validity, { inputs: {}, results: [], summary: null, updatedAt: null });
+}
+
+export async function saveValidity(auditId, { inputs, results, summary }) {
+  const data = { inputs: inputs ?? {}, results: results ?? [], summary: summary ?? null, updatedAt: new Date().toISOString() };
+  await writeJson(paths(auditId).validity, data);
   return data;
 }
 

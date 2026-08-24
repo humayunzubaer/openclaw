@@ -1,0 +1,43 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# Generated code (ffigen + build_runner) — regenerate with:
+#   dart run ffigen --config ffigen.yaml
+#   dart run build_runner build --delete-conflicting-outputs
+lib/native/scanner_core_bindings.g.dart
+*.g.dart
+
+# Platform scaffolding created by `flutter create` overlay
+/android/
+/ios/Runner.xcodeproj/
+/ios/Runner.xcworkspace/
+/ios/Pods/
+/ios/.symlinks/
+/ios/Flutter/Flutter.framework
+/ios/Flutter/Flutter.podspec
+/macos/
+/linux/
+/windows/
+/web/
+.idea/
+*.iml
+
+# Native third-party libraries (user-supplied — see BUILD_GUIDE.md §2)
+native/third_party/
+native/build/
+
+# Large AI models & fonts (user-supplied — see BUILD_GUIDE.md §3)
+assets/tessdata/*.traineddata
+assets/models/*.onnx
+assets/fonts/*.ttf
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

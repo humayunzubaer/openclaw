@@ -25,7 +25,7 @@ export const bondDirectNonGarments = {
     { id: "bond-register-raw", label: "বন্ড রেজিস্টার — কাঁচামাল (Raw Materials)", required: true },
     { id: "bond-register-finished", label: "বন্ড রেজিস্টার — উৎপাদিত পণ্য (Finished Goods)", required: true },
     { id: "io-coefficient", label: "Input-Output Coefficient (অনুমোদিত)", required: true, hint: "প্রতি একক পণ্যে অনুমোদিত কাঁচামাল" },
-    { id: "utilization-declaration", label: "Utilization Declaration (UD)", required: true },
+    { id: "utilization-declaration", label: "Utilization Declaration (UD/UP)", required: true, hint: "ইপিজেড প্রতিষ্ঠানে UP/UD-এর বদলে EP / Sales Contract হতে পারে" },
     { id: "bill-of-export", label: "Bill of Export / রপ্তানি দলিল", required: true },
     { id: "export-lc", label: "Export L/C / Sales Contract", required: false },
     { id: "stock-report", label: "স্টক রিপোর্ট (কাঁচামাল ও উৎপাদিত পণ্য)", required: true },
@@ -39,12 +39,169 @@ export const bondDirectNonGarments = {
     { id: "ent-limit", area: "লাইসেন্স ও Entitlement", question: "আমদানির পরিমাণ অনুমোদিত annual entitlement/UP অতিক্রম করেছে কি?", legalRef: "bwl-rules" },
     { id: "be-vs-register", area: "আমদানি বনাম রেকর্ড", question: "প্রতিটি Bill of Entry বন্ড রেজিস্টারে যথাযথভাবে entry হয়েছে কি? পরিমাণ/মূল্য মিল আছে কি?", legalRef: "bwl-rules" },
     { id: "coefficient-check", area: "ব্যবহার (Consumption)", question: "প্রকৃত কাঁচামাল ব্যবহার অনুমোদিত input-output coefficient অনুযায়ী কি? অতিরিক্ত ব্যবহার আছে কি?", legalRef: "bwl-rules" },
-    { id: "ud-vs-export", area: "রপ্তানি সমন্বয়", question: "UD-তে দাবিকৃত ব্যবহার প্রকৃত রপ্তানি (Bill of Export) দিয়ে সমর্থিত কি?", legalRef: "customs-act-21" },
+    { id: "ud-vs-export", area: "রপ্তানি সমন্বয়", question: "UD/EP-তে দাবিকৃত ব্যবহার প্রকৃত রপ্তানি (Bill of Export) দিয়ে সমর্থিত কি? (ইপিজেড হলে EP/Sales Contract)", legalRef: "customs-act-21" },
     { id: "unused-stock", area: "স্টক ও উদ্বৃত্ত", question: "উদ্বৃত্ত/অব্যবহৃত কাঁচামালের হিসাব মিলছে কি? স্থানীয় বিক্রয়/অপচয়ের প্রমাণ আছে কি?", legalRef: "customs-act-156" },
     { id: "overstay", area: "স্টক ও উদ্বৃত্ত", question: "নির্ধারিত মেয়াদ (সাধারণত ২ বছর) অতিক্রান্ত কাঁচামাল বন্ডে আছে কি?", legalRef: "bwl-rules" },
     { id: "wastage", area: "অপচয় (Wastage)", question: "দাবিকৃত অপচয় অনুমোদিত হার অতিক্রম করেছে কি? অপচয়/স্ক্র্যাপ নিষ্পত্তির রেকর্ড আছে কি?", legalRef: "bwl-rules" },
     { id: "revenue-loss", area: "রাজস্ব প্রভাব", question: "উপরের অসঙ্গতির ফলে ফাঁকি/পরিহারযোগ্য শুল্ক-কর কত? (ঘাটতি × প্রযোজ্য শুল্ক-কর)", legalRef: "customs-act-156" },
   ]),
+
+  // সংখ্যাগত auto-check: auditor সংখ্যা বসাবেন, ইঞ্জিন (src/checks/numeric.js)
+  // ঘাটতি ও রাজস্ব হিসাব করবে। এখানে শুধু serializable ইনপুট-স্পেক (compute নয়)।
+  // inputs[].optional === true মানে না দিলে 0 ধরা হয় (সাধারণত duty/rate ফিল্ড)।
+  numericChecks: [
+    {
+      id: "num-entitlement",
+      title: "Entitlement অতিক্রম (আমদানি vs অনুমোদিত)",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "bwl-rules",
+      formula: "অতিরিক্ত = আমদানি − অনুমোদিত entitlement; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "approvedEntitlement", label: "অনুমোদিত annual entitlement / UP", unit: "একক" },
+        { key: "imported", label: "প্রকৃত আমদানি", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-be-register-raw",
+      title: "কাঁচামাল আমদানি B/E vs ইন-টু-বন্ড রেজিস্টার",
+      area: "আমদানি বনাম রেকর্ড",
+      legalRef: "bwl-rules",
+      formula: "পার্থক্য = কাঁচামাল B/E আমদানি − ইন-টু-বন্ড রেজিস্টার; কম রেকর্ড × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "beQty", label: "কাঁচামাল আমদানি B/E পরিমাণ", unit: "একক" },
+        { key: "registerQty", label: "ইন-টু-বন্ড (কাঁচামাল) রেজিস্টার পরিমাণ", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-be-register-machinery",
+      title: "মেশিনারিজ আমদানি B/E vs রেজিস্টার",
+      area: "আমদানি বনাম রেকর্ড",
+      legalRef: "bwl-rules",
+      formula: "পার্থক্য = মেশিনারিজ B/E আমদানি − মূলধনী/মেশিনারিজ রেজিস্টার; কম রেকর্ড × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "beQty", label: "মেশিনারিজ আমদানি B/E পরিমাণ", unit: "একক" },
+        { key: "registerQty", label: "মূলধনী/মেশিনারিজ রেজিস্টার পরিমাণ", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-be-register-sample",
+      title: "Sample আমদানি B/E vs রেজিস্টার",
+      area: "আমদানি বনাম রেকর্ড",
+      legalRef: "bwl-rules",
+      formula: "পার্থক্য = Sample B/E আমদানি − Sample রেজিস্টার; কম রেকর্ড × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "beQty", label: "Sample আমদানি B/E পরিমাণ", unit: "একক" },
+        { key: "registerQty", label: "Sample রেজিস্টার পরিমাণ", unit: "একক" },
+        { key: "dutyPerUnit", label: "শুল্ক-কর / একক", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-coefficient",
+      title: "Coefficient অনুযায়ী অতিরিক্ত ব্যবহার",
+      area: "ব্যবহার (Consumption)",
+      legalRef: "bwl-rules",
+      formula: "অনুমোদিত = উৎপাদন × coefficient; অতিরিক্ত = প্রকৃত ব্যবহার − অনুমোদিত; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "finishedProduced", label: "উৎপাদিত পণ্য (Finished)", unit: "একক" },
+        { key: "coeffPerUnit", label: "অনুমোদিত coefficient (কাঁচামাল/একক পণ্য)", unit: "" },
+        { key: "actualConsumed", label: "প্রকৃত কাঁচামাল ব্যবহার", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-ud-export",
+      title: "UD/EP দাবি vs প্রকৃত রপ্তানি (সমন্বয়)",
+      area: "রপ্তানি সমন্বয়",
+      legalRef: "customs-act-21",
+      formula: "অসমর্থিত = দাবিকৃত ব্যবহার − রপ্তানি-সমর্থিত ব্যবহার; অসমর্থিত × শুল্ক-কর/একক = রাজস্ব (ইপিজেড হলে UP/UD-এর বদলে EP/Sales Contract)",
+      inputs: [
+        { key: "udClaimedRaw", label: "UD/EP/Sales Contract-এ দাবিকৃত কাঁচামাল ব্যবহার", unit: "একক" },
+        { key: "exportBackedRaw", label: "প্রকৃত রপ্তানি-সমর্থিত ব্যবহার (Bill of Export)", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-material-balance",
+      title: "কাঁচামাল Reconciliation (অহিসাবকৃত)",
+      area: "স্টক ও উদ্বৃত্ত",
+      legalRef: "customs-act-156",
+      formula: "অহিসাবকৃত = (Opening+Import) − (রপ্তানি-ব্যবহার + অপচয় + Closing); ঘাটতি × শুল্ক-কর/একক = রাজস্ব",
+      inputs: [
+        { key: "openingStock", label: "প্রারম্ভিক মজুদ (Opening)", unit: "একক" },
+        { key: "imported", label: "আমদানি (Import)", unit: "একক" },
+        { key: "consumedForExport", label: "রপ্তানিতে ব্যবহৃত কাঁচামাল", unit: "একক" },
+        { key: "wastageAllowedQty", label: "স্বীকৃত অপচয় পরিমাণ", unit: "একক", optional: true },
+        { key: "closingStock", label: "সমাপনী মজুদ (Closing)", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-wastage",
+      title: "অপচয় (Wastage) অনুমোদিত হারের বেশি",
+      area: "অপচয় (Wastage)",
+      legalRef: "bwl-rules",
+      formula: "অনুমোদিত অপচয় = ব্যবহৃত × হার%; অতিরিক্ত = দাবিকৃত − অনুমোদিত; রাজস্ব = অতিরিক্ত × শুল্ক-কর/একক",
+      inputs: [
+        { key: "consumedRaw", label: "ব্যবহৃত কাঁচামাল", unit: "একক" },
+        { key: "allowedWastagePct", label: "অনুমোদিত অপচয় হার", unit: "%" },
+        { key: "declaredWastageQty", label: "দাবিকৃত অপচয়", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+    {
+      id: "num-overstay",
+      title: "মেয়াদোত্তীর্ণ কাঁচামাল (Overstay)",
+      area: "স্টক ও উদ্বৃত্ত",
+      legalRef: "bwl-rules",
+      formula: "রাজস্ব = মেয়াদোত্তীর্ণ পরিমাণ × শুল্ক-কর/একক (২ বছরের বেশি বন্ডে থাকা কাঁচামাল)",
+      inputs: [
+        { key: "overstayQty", label: "মেয়াদোত্তীর্ণ (>২ বছর) পরিমাণ", unit: "একক" },
+        { key: "dutyPerRawUnit", label: "শুল্ক-কর / একক কাঁচামাল", unit: "BDT", optional: true },
+      ],
+    },
+  ],
+
+  // মেয়াদ/Entitlement যাচাই (তারিখ ও HS-list ভিত্তিক; হিসাব src/checks/validity.js)।
+  // inputs[].type: "date" (YYYY-MM-DD) | "text" (list)। optional true = না দিলে ডিফল্ট।
+  validityChecks: [
+    {
+      id: "val-license-expiry",
+      title: "বন্ড লাইসেন্স মেয়াদ",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "customs-act-13",
+      formula: "লাইসেন্স মেয়াদ vs নিরীক্ষা তারিখ — উত্তীর্ণ (high) বা ≤৯০ দিন (medium) হলে flag",
+      inputs: [
+        { key: "licenseExpiry", label: "লাইসেন্স মেয়াদ শেষ", type: "date" },
+        { key: "asOf", label: "নিরীক্ষা তারিখ (as-of)", type: "date", optional: true },
+      ],
+    },
+    {
+      id: "val-up-coverage",
+      title: "UP/UD মেয়াদে লেনদেন",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "bwl-rules",
+      formula: "লেনদেন (B/E/রপ্তানি) তারিখ UP/UD/EP বৈধতার (from–to) মধ্যে কি",
+      inputs: [
+        { key: "upValidFrom", label: "UP/UD/EP বৈধ শুরু", type: "date" },
+        { key: "upValidTo", label: "UP/UD/EP বৈধ শেষ", type: "date" },
+        { key: "transactionDate", label: "লেনদেন (B/E/রপ্তানি) তারিখ", type: "date" },
+      ],
+    },
+    {
+      id: "val-hs-entitlement",
+      title: "HS code entitlement",
+      area: "লাইসেন্স ও Entitlement",
+      legalRef: "customs-act-13",
+      formula: "আমদানিকৃত প্রতিটি HS code অনুমোদিত entitlement তালিকায় আছে কি",
+      inputs: [
+        { key: "entitledHs", label: "অনুমোদিত HS code (কমা/স্পেস)", type: "text" },
+        { key: "importedHs", label: "আমদানিকৃত HS code (কমা/স্পেস)", type: "text" },
+      ],
+    },
+  ],
 
   // Working Paper-এর সেকশন কাঠামো (রিপোর্টেও এই ক্রম অনুসৃত হয়)
   workingPaperSections: [
