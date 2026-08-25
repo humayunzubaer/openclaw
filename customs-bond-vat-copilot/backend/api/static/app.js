@@ -4,6 +4,17 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const money = (n) => "৳ " + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 const num = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 3 });
+const bdt = (n) => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+// JSON fetch helper (ম্যানুয়াল-যাচাই view ব্যবহার করে)
+const api = {
+  async get(url) { return (await fetch(url)).json(); },
+  async send(method, url, body) {
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined });
+    return r.json();
+  },
+};
 
 // ---------- health ----------
 (async () => {
@@ -163,6 +174,109 @@ function tableCard(title, rows, cols) {
   }).join("") + "</tr>").join("");
   return `<div class="card"><h2>${esc(title)} <small>(${rows.length})</small></h2>
     <div class="tablewrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+}
+
+// ---------- Manual checks view (numeric + validity + evidence) ----------
+const SEV = { high: "var(--high)", medium: "var(--warn)", low: "var(--ok)" };
+let SPECS = null;
+
+function showView(which) {
+  $("view-file").classList.toggle("hidden", which !== "file");
+  $("view-manual").classList.toggle("hidden", which !== "manual");
+  $("nav-file").className = "btn btn-sm " + (which === "file" ? "btn-primary" : "btn-ghost");
+  $("nav-manual").className = "btn btn-sm " + (which === "manual" ? "btn-primary" : "btn-ghost");
+  if (which === "manual") renderManual();
+}
+$("nav-file").onclick = () => showView("file");
+$("nav-manual").onclick = () => showView("manual");
+
+function checkCard(s, kind) {
+  const fields = s.inputs.map((inp) => {
+    const type = inp.type === "date" ? "date" : inp.type === "text" ? "text" : "number";
+    const opt = inp.optional ? ' <span class="muted">— ঐচ্ছিক</span>' : "";
+    const u = inp.unit ? ` <span class="muted">(${esc(inp.unit)})</span>` : "";
+    return `<label class="num-field">${esc(inp.label)}${u}${opt}
+      <input type="${type}" step="any" data-check="${s.id}" data-key="${inp.key}"
+        ${type === "text" ? 'placeholder="5208.11, 6109.10"' : ""} /></label>`;
+  }).join("");
+  return `<div class="card num-card" data-check="${s.id}" data-kind="${kind}">
+    <strong>${esc(s.title)}</strong>
+    <div class="muted" style="font-size:12px;margin:2px 0 8px">${esc(s.area)} · ${esc(s.formula || "")}</div>
+    <div class="num-grid">${fields}</div>
+    <div class="num-result" data-result="${s.id}"></div></div>`;
+}
+
+async function renderManual() {
+  const box = $("view-manual");
+  if (!SPECS) SPECS = await api.get("/api/checks/specs");
+  box.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="muted" style="font-size:13px">নিরীক্ষক সংখ্যা/তারিখ বসিয়ে যাচাই করুন। এখানকার
+      উপমোট চূড়ান্ত রাজস্ব-মোটে নিজে থেকে যোগ হয় না — এগুলো ফাইল-বিশ্লেষণের পরিপূরক পর্যবেক্ষণ।</div>
+    </div>
+    <div class="section-head"><h2>🧮 সংখ্যাগত যাচাই</h2>
+      <button class="btn btn-primary btn-sm" id="run-num">হিসাব করুন</button></div>
+    <div id="num-summary"></div>
+    <div class="grid">${SPECS.numeric.map((s) => checkCard(s, "num")).join("")}</div>
+    <div class="section-head" style="margin-top:20px"><h2>📅 মেয়াদ / Entitlement যাচাই</h2>
+      <button class="btn btn-primary btn-sm" id="run-val">যাচাই করুন</button></div>
+    <div id="val-summary"></div>
+    <div class="grid">${SPECS.validity.map((s) => checkCard(s, "val")).join("")}</div>
+    <div class="section-head" style="margin-top:20px"><h2>🔍 Smart Evidence (OCR টেক্সট → সংখ্যা)</h2></div>
+    <div class="card">
+      <div class="muted" style="font-size:12.5px;margin-bottom:6px">নথির OCR টেক্সট paste করুন — টুল সংখ্যা তুলে
+      কোন check-input-এ বসতে পারে তার সাজেশন ও confidence দেখাবে (auto-map নয়)।</div>
+      <textarea id="ev-text" style="width:100%;min-height:90px" placeholder="যেমন: মেশিনারিজ রেজিস্টার লিপিবদ্ধ 4 একক ..."></textarea>
+      <div class="row-end"><button class="btn btn-ghost btn-sm" id="run-ev">Evidence তুলুন</button></div>
+      <div id="ev-out"></div>
+    </div>`;
+
+  const collect = (kind) => {
+    const inputs = {};
+    box.querySelectorAll(`.num-card[data-kind="${kind}"] input[data-check]`).forEach((el) => {
+      if (el.value === "") return;
+      (inputs[el.dataset.check] ??= {})[el.dataset.key] = el.value;
+    });
+    return inputs;
+  };
+  const showResults = (results, sumSel, sumHtml) => {
+    const map = Object.fromEntries(results.map((r) => [r.id, r]));
+    box.querySelectorAll(".num-result").forEach((el) => {
+      const r = map[el.dataset.result];
+      if (!r || r.status === "insufficient") { el.innerHTML = r && r.status === "insufficient" ? `<div class="muted" style="font-size:12px">${esc(r.observation)}</div>` : ""; return; }
+      const flag = r.status === "flag";
+      const c = SEV[r.severity] || SEV.low;
+      const rev = flag && Number(r.revenue_implication) ? ` · রাজস্ব: ৳${bdt(r.revenue_implication)}` : "";
+      el.innerHTML = `<div class="num-out ${r.status}"><span class="pill" style="background:${c};color:#fff">${flag ? "⚠ " + r.severity : "✓ ঠিক"}</span>${rev}<div style="margin-top:4px">${esc(r.observation)}</div></div>`;
+    });
+    $(sumSel).innerHTML = sumHtml;
+  };
+
+  $("run-num").onclick = async () => {
+    const r = await api.send("POST", "/api/checks/numeric", { inputs: collect("num") });
+    showResults(r.results, "num-summary",
+      `<div class="stat-row"><div class="stat"><div class="n" style="color:var(--high)">${r.summary.flagged}</div><div class="l">ব্যত্যয়</div></div>
+       <div class="stat"><div class="n">৳${bdt(r.summary.totalRevenue)}</div><div class="l">উপমোট (গৃহীত হলে যোগ হবে)</div></div></div>`);
+  };
+  $("run-val").onclick = async () => {
+    const r = await api.send("POST", "/api/checks/validity", { inputs: collect("val") });
+    showResults(r.results, "val-summary",
+      `<div class="stat-row"><div class="stat"><div class="n" style="color:var(--high)">${r.summary.flagged}</div><div class="l">মেয়াদ/entitlement ব্যত্যয়</div></div></div>`);
+  };
+  $("run-ev").onclick = async () => {
+    const text = $("ev-text").value;
+    if (!text.trim()) return;
+    const r = await api.send("POST", "/api/checks/evidence/scan", {
+      documents: [{ id: "paste", filename: "paste.txt", ocrStatus: "done", ocrText: text }] });
+    const chips = (r.groups[0] && r.groups[0].chips) || [];
+    $("ev-out").innerHTML = chips.length ? `<div class="tablewrap"><table><thead><tr>
+      <th class="num">মান</th><th>পৃ.</th><th>উৎস টেক্সট</th><th>সাজেশন (check → field)</th><th class="num">confidence</th></tr></thead>
+      <tbody>${chips.map((c) => `<tr><td class="num">${bdt(c.value)}</td><td>${c.page}</td>
+        <td style="white-space:normal">${esc(c.sourceText)}</td>
+        <td>${c.suggestions.length ? esc(c.suggestions[0].checkTitle) + " → " + esc(c.suggestions[0].inputLabel) : "—"}</td>
+        <td class="num">${Math.round(c.confidence * 100)}%</td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="empty">কোনো সংখ্যা পাওয়া যায়নি।</div>`;
+  };
 }
 
 // scalar fields only, first ~9

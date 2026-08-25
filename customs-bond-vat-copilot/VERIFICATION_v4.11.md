@@ -165,4 +165,29 @@ engine আর headless নয় — `backend/api/main.py` (FastAPI) + `backend/
 - **সীমা:** data_loader এখনো শীট থেকে পৃথক বর্ধিত-কলাম পার্স করে না — folded শীট বা
   extension flag দিয়ে চলে; পৃথক-কলাম loader-সাপোর্ট পরবর্তী কাজ।
 
-**পরবর্তী:** C7 (T-03 মজুদকাল ২৪ মাস) → OCR/Level-2 AI → Module 2।
+### ✅ JS চেক-ক্যাটালগ Python engine-এ পোর্ট — সম্পন্ন
+
+নিরীক্ষকের JS ওয়ার্কবেঞ্চের পুরো ম্যানুয়াল-চেক ইঞ্জিন Python-এ আনা হলো:
+
+- **`services/checks/numeric.py`** — ৯টি reconciliation চেক (entitlement, B/E-vs-
+  register raw/machinery/sample, coefficient, UD/EP-vs-export, material-balance,
+  wastage, **overstay ২ বছর — C7**)। দ্বিমুখী (ঘাটতি→দাবি; over-record→রেকর্ড
+  অসঙ্গতি, রাজস্ব ০); duty ঐচ্ছিক।
+- **`services/checks/validity.py`** — লাইসেন্স মেয়াদ, UP/UD coverage, HS entitlement।
+- **`services/checks/evidence.py`** — Smart Evidence Chip (OCR টেক্সট → সংখ্যা +
+  বাংলা/English synonym দুই-স্তর field-সাজেশন + confidence)।
+- **`knowledge/check_specs.py`** — serializable spec + legal-ref map।
+- **API:** `/api/checks/specs`, `/api/checks/numeric`, `/api/checks/validity`,
+  `/api/checks/evidence/scan`। **UI:** "🧮 ম্যানুয়াল যাচাই" view (numeric+validity
+  ফর্ম + compute + Evidence paste-panel)।
+- **দ্বৈত গণনা রোধ:** এই উপমোট চূড়ান্ত রাজস্ব-মোটে auto-যোগ হয় না; source-ট্যাগড
+  finding নিরীক্ষক গ্রহণ করলে যোগ হয়।
+- **যাচাই:** `tests/test_manual_checks.py` (২৯) + `tests/test_evidence_chips.py`
+  (৮) — JS test হইতে পোর্ট, সব pass; UI browser-এ যাচাইকৃত।
+
+এতে **C7 (overstay)** ও Module 2/3/4-এর মূল চেক-সূত্র (coefficient, material-
+balance, wastage, UD-export) engine-এ চলে এলো (ম্যানুয়াল-ইনপুট রূপে; পরে
+ফাইল-স্বয়ংক্রিয় নিষ্কাশনের সাথে যুক্ত হবে)।
+
+**পরবর্তী:** এই চেকগুলো ফাইল-বিশ্লেষণের সাথে auto-ইনপুট (register/AIS হইতে) → OCR
+স্তর → Module 2 পূর্ণ।

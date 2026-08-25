@@ -54,3 +54,15 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .check input { width: auto; margin-top: 2px; }
 .warnbox { background: #fdf6e3; border: 1px solid #eadfb0; border-radius: 8px;
   padding: 10px 12px; font-size: 13.5px; line-height: 1.6; }
+.viewnav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.section-head { display: flex; justify-content: space-between; align-items: center; margin: 0 0 12px; }
+.section-head h2 { margin: 0; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.num-card { margin-bottom: 0; }
+.num-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 12px; }
+.num-field { font-size: 12.5px; }
+.num-field input { text-align: right; }
+.num-result:not(:empty) { margin-top: 10px; }
+.num-out { border-radius: 8px; padding: 9px 11px; font-size: 13px; line-height: 1.5; border: 1px solid var(--line); }
+.num-out.flag { border-left: 4px solid var(--high); background: #fef6f5; }
+.num-out.ok { border-left: 4px solid var(--ok); background: #f2faf6; }

@@ -19,7 +19,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,10 @@ from services.import_analysis import ImportAnalysisEngine
 from services.capacity_ledger import BondRegisterReader
 from services.bond_register import RegisterDecision
 from services.report_writer import write_report
+from services.checks.numeric import run_numeric_checks
+from services.checks.validity import run_validity_checks
+from services.checks.evidence import scan_documents
+from knowledge.check_specs import NUMERIC_CHECKS, VALIDITY_CHECKS
 from utils.logger import logger
 
 app = FastAPI(
@@ -226,6 +230,30 @@ async def analyze_import_xlsx(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="audit_workpaper.xlsx",
     )
+
+
+# ----------------------------------------------------------
+# ম্যানুয়াল সংখ্যাগত / মেয়াদ যাচাই ও Evidence Chip (JS হইতে পোর্ট)
+# ----------------------------------------------------------
+@app.get("/api/checks/specs")
+async def check_specs():
+    return {"numeric": NUMERIC_CHECKS, "validity": VALIDITY_CHECKS}
+
+
+@app.post("/api/checks/numeric")
+async def checks_numeric(body: dict = Body(default={})):
+    return run_numeric_checks(NUMERIC_CHECKS, body.get("inputs") or {})
+
+
+@app.post("/api/checks/validity")
+async def checks_validity(body: dict = Body(default={})):
+    return run_validity_checks(VALIDITY_CHECKS, body.get("inputs") or {})
+
+
+@app.post("/api/checks/evidence/scan")
+async def checks_evidence_scan(body: dict = Body(default={})):
+    """documents:[{id, filename, ocrText, ocrStatus?}] → Evidence Chips।"""
+    return scan_documents(body.get("documents") or [], NUMERIC_CHECKS)
 
 
 # ---- static frontend (সবার শেষে mount, যাতে /api/* আগে ম্যাচ করে) ----
