@@ -382,14 +382,15 @@ class Schedule3Analyzer:
         ★ T-06 — SRO ২১২ বিধি ১০(৮): ইউপিতে মূল্য সংযোজনের হার উল্লেখ
         বাধ্যতামূলক এবং তা ১৫% এর কম হবে না।
 
-        VA% = (রপ্তানি FOB − ব্যবহৃত কাঁচামালের আমদানি মূল্য) ÷ রপ্তানি FOB × ১০০
+        VA% = (রপ্তানি FOB − ব্যবহৃত কাঁচামালের আমদানি মূল্য) ÷ **ব্যবহৃত কাঁচামালের
+        মূল্য (Input)** × ১০০  (নিরীক্ষক-নির্ধারিত ভিত্তি; Gold Shine নমুনায় ২৩.৪৫%)
         """
         fob = r.export_value or 0
         inp = r.total_input_value or 0
         if fob <= 0 or inp <= 0:
             return
 
-        va = (fob - inp) / fob * 100
+        va = (fob - inp) / inp * 100
         if va >= self.MIN_VALUE_ADDITION:
             return
 

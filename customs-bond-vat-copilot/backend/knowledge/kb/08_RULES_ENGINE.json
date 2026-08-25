@@ -165,8 +165,8 @@
         "imported_input_value",
         "min_va_pct"
       ],
-      "formula": "va_pct = (export_fob - imported_input_value)/export_fob*100",
-      "anti_pattern_detector": "if base=input_value used, flag inflated VA (M&M 133.82% vs 57.53%)",
+      "formula": "va_pct = (export_fob - imported_input_value)/imported_input_value*100",
+      "anti_pattern_detector": "authoritative base = imported input value (auditor-set, Gold Shine 23.45%); if base=export_fob is used VA is understated — engine computes both and flags the discrepancy",
       "threshold": {
         "min_va_percent": 15
       },
@@ -515,7 +515,7 @@
       }
     },
     "traps": [
-      "উৎসে কর কর্তন বিধিমালা ২০২৪ (SRO 161/আয়কর) ≠ উৎসে মূসক VDS (SRO 240-আইন/2021/174-মূসক)",
+      "উৎসে কর কর্তন বিধিমালা ২০২৪ (SRO 161/আয়কর) ≠ উৎসে মূসক VDS (SRO 240-আইন/2021/163-মূসক)",
       "প্রাপ্যতা-সংক্রান্ত অনিষ্পন্ন বিষয়ে ২০২৪-বিধি নয়, ২০০৮-আদেশ প্রযোজ্য"
     ]
   }
