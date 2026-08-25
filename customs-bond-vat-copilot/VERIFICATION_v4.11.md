@@ -191,3 +191,22 @@ balance, wastage, UD-export) engine-এ চলে এলো (ম্যানু�
 
 **পরবর্তী:** এই চেকগুলো ফাইল-বিশ্লেষণের সাথে auto-ইনপুট (register/AIS হইতে) → OCR
 স্তর → Module 2 পূর্ণ।
+
+### ✅ C7 — মেয়াদোত্তীর্ণ (overstay) = দাবি ৬ (engine, সর্বমোটে যুক্ত) — সম্পন্ন
+
+নিরীক্ষক সিদ্ধান্ত: overstay পৃথক দাবি, সর্বমোটে auto-যোগ (manual চেক ছাড়াও)।
+
+- **`OverstayRecord` + `_build_overstay`** (`import_analysis.py`) — বন্ড রেজিস্টার
+  (তফসিল-১) এর প্রতি-সারি ইন্টু/এক্স-বন্ড linkage হইতে অবশিষ্ট = into − ex(same row);
+  ইন্টু-বন্ড তারিখ কর্তন-সীমার (as-of − `overstay_years`, default ২.০) আগে ও
+  অবশিষ্ট > 0 হইলে overstay। শুল্ক AIS/MIS বিল হইতে আনুপাতিক (assess_bill)।
+- **সর্বমোটে যুক্ত:** summary-তে "দাবি ৬" + সর্বমোট; Excel-এ "২খ. মেয়াদোত্তীর্ণ
+  কাঁচামাল" শীট + cover-এ দাবি ৬; UI-তে stat card + টেবিল। রেজিস্টার না থাকিলে
+  "স্থগিত" নোট → ম্যানুয়াল overstay চেক নির্দেশ।
+- **threshold:** ২ বছর = working default (gazette citation অপেক্ষমাণ), `overstay_years`
+  প্যারামিটারাইজড।
+- **যাচাই:** `tests/test_overstay_c7.py` — ৮ assertion (৩০০ kg→৳৩০,০০০, cutoff,
+  সর্বমোট, no-register warning, ৫-বছর threshold), সব pass; Excel/cover যাচাইকৃত;
+  ৬টি prior suite regression green।
+
+HANDOFF §২খ: **C1 ✅ C2 ✅ C3 ✅ C6 ✅ C7 ✅** | বাকি: C4 (EPZ IP/EP), C5 (বিদ্যুৎ), C8 (PRC)।

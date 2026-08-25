@@ -146,6 +146,7 @@ def _result_payload(result, dl) -> dict:
             "unauthorized": [asdict(r) for r in result.unauthorized_records],
             "post_period": [asdict(r) for r in result.post_period_records],
             "rule8": [asdict(r) for r in result.rule8_observations],
+            "overstay": [asdict(r) for r in result.overstay_records],
             "capacity_breach": [asdict(r) for r in result.capacity_breach_records],
             "capacity_limit": [asdict(r) for r in result.capacity_limit_records],
             "utilization": [asdict(r) for r in result.utilization_records],

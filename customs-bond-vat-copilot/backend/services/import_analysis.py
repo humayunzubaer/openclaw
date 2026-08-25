@@ -21,7 +21,7 @@ Import Analysis Engine — আমদানি বিশ্লেষণ ইঞ্
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, Any
 
 import pandas as pd
@@ -641,6 +641,35 @@ class Rule8Observation:
 
 
 @dataclass
+class OverstayRecord:
+    """
+    ★ দাবি ৬ — মেয়াদোত্তীর্ণ (নির্ধারিত মেয়াদের বেশি) বন্ডে থাকা কাঁচামাল।
+
+    বন্ড রেজিস্টার (তফসিল-১) হইতে auto-নির্ণীত: যে ইন্টু-বন্ড কাঁচামাল নির্ধারিত
+    মেয়াদ (working default ২ বছর — gazette citation অপেক্ষমাণ) অতিক্রান্ত হইবার পরও
+    বন্ডে অবশিষ্ট (ex-bond হয় নাই) আছে, তাহার শুল্ক-কর পরিশোধযোগ্য হইয়া পড়ে।
+    """
+    serial: int
+    hs_code: str
+    item_name: str
+    bill_numbers: str
+    into_bond_dates: str
+    overstay_quantity_kg: float
+    assessable_value_bdt: float
+    cd_demanded: float
+    rd_demanded: float
+    sd_demanded: float
+    vat_demanded: float
+    at_demanded: float
+    ait_demanded: float
+    total_revenue_impact: float
+    assessment_basis: str
+    cutoff_date: str
+    legal_basis: str
+    remarks: str
+
+
+@dataclass
 class ImportAnalysisResult:
     """সম্পূর্ণ বিশ্লেষণ ফলাফল"""
     excess_records: list[ExcessRecord] = field(default_factory=list)
@@ -648,6 +677,7 @@ class ImportAnalysisResult:
     unauthorized_records: list[UnauthorizedRecord] = field(default_factory=list)
     post_period_records: list[PostPeriodRecord] = field(default_factory=list)
     rule8_observations: list[Rule8Observation] = field(default_factory=list)
+    overstay_records: list[OverstayRecord] = field(default_factory=list)
     machinery_records: list[MachineryRecord] = field(default_factory=list)
     bonding_records: list[BondingCapacityRecord] = field(default_factory=list)
     capacity_limit_records: list[CapacityLimitRecord] = field(default_factory=list)
@@ -697,6 +727,9 @@ class ImportAnalysisResult:
             ),
             "বিধি ৮ বর্ধিত প্রাপ্যতা": pd.DataFrame(
                 [asdict(r) for r in self.rule8_observations]
+            ),
+            "মেয়াদোত্তীর্ণ (দাবি ৬)": pd.DataFrame(
+                [asdict(r) for r in self.overstay_records]
             ),
             "বন্ডিং ক্যাপাসিটি": pd.DataFrame(
                 [asdict(r) for r in self.capacity_breach_records]
@@ -749,6 +782,8 @@ class ImportAnalysisEngine:
         next_entitlement_date: date | None = None,
         bond_license_capacity_mt: float = 0.0,
         extension_applies: bool = False,
+        overstay_years: float = 2.0,
+        overstay_as_of: date | None = None,
     ):
         self.entitlements = entitlements
         self.imports = imports
@@ -773,6 +808,9 @@ class ImportAnalysisEngine:
         # ★ বিধি ৮ — নিরীক্ষায় প্রাপ্যতার মেয়াদ বৃদ্ধি প্রযোজ্য কিনা (নিরীক্ষক flag)।
         #   True হইলে সর্বদা বিয়োজন-যাচাই পর্যবেক্ষণ দেওয়া হয়।
         self.extension_applies = extension_applies
+        # ★ দাবি ৬ (overstay) — মেয়াদ সীমা (বছর, working default ২.০) ও রেফারেন্স তারিখ।
+        self.overstay_years = overstay_years or 2.0
+        self.overstay_as_of = overstay_as_of
         # একক নিষ্কাশক
         self.unit_extractor = UnitExtractor()
         self.tolerance = tolerance
@@ -936,6 +974,9 @@ class ImportAnalysisEngine:
 
         # ধাপ ৪.৬: ★ বিধি ৮ — বর্ধিত প্রাপ্যতা ও বিয়োজন পর্যবেক্ষণ
         self._build_rule8_observations(result)
+
+        # ধাপ ৪.৭: ★ দাবি ৬ — মেয়াদোত্তীর্ণ (overstay) কাঁচামাল (রেজিস্টার-ভিত্তিক)
+        self._build_overstay(result)
 
         # ধাপ ৫: মেশিনারিজ তালিকা
         self._build_machinery(machinery, result)
@@ -1489,6 +1530,111 @@ class ImportAnalysisEngine:
 
         result.warnings.append("বিধি ৮ (বর্ধিত প্রাপ্যতা): " + self.RULE8_INSTRUCTION)
         logger.info(f"বিধি ৮ পর্যবেক্ষণ — {len(result.rule8_observations)}টি")
+
+    # ------------------------------------------------------
+    OVERSTAY_LEGAL_BASIS = (
+        "ওয়্যারহাউস লাইসেন্সিং বিধিমালা — নির্ধারিত মেয়াদের অধিক বন্ডে রক্ষিত "
+        "কাঁচামালে শুল্ক-কর পরিশোধযোগ্যতা (working default ২ বছর — gazette citation "
+        "অপেক্ষমাণ; সংশ্লিষ্ট SRO/বিধি যাচাই করুন)"
+    )
+
+    def _build_overstay(self, result: ImportAnalysisResult):
+        """
+        ★ দাবি ৬ — মেয়াদোত্তীর্ণ (overstay) কাঁচামাল — বন্ড রেজিস্টার (তফসিল-১)
+        হইতে auto-নির্ণীত। প্রতিটি রেজিস্টার-সারির ইন্টু/এক্স-বন্ড linkage হইতে
+        অবশিষ্ট নির্ণয় করিয়া, ইন্টু-বন্ড তারিখ কর্তন-সীমার আগের হইলে ও অবশিষ্ট > 0
+        হইলে overstay ধরা হয়। শুল্ক AIS/MIS বিল হইতে আনুপাতিকভাবে।
+        """
+        if not self.ledger_events:
+            result.warnings.append(
+                "ℹ বন্ড রেজিস্টার (তফসিল-১) দেওয়া হয় নাই — মেয়াদোত্তীর্ণ (overstay, "
+                "দাবি ৬) স্বয়ংক্রিয় নির্ণয় সম্ভব হয় নাই। 'ম্যানুয়াল যাচাই'-এর overstay "
+                "চেক ব্যবহার করুন।"
+            )
+            return
+
+        as_of = self.overstay_as_of or self._audit_period_end() or date.today()
+        cutoff = as_of - timedelta(days=round(self.overstay_years * 365.25))
+
+        into_by_row: dict[int, Any] = {}
+        ex_kg_by_row: dict[int, float] = {}
+        for ev in self.ledger_events:
+            rn = getattr(ev, "row_number", 0) or 0
+            if ev.kind == "into_bond":
+                into_by_row[rn] = ev
+            elif ev.kind == "ex_bond":
+                ex_kg_by_row[rn] = ex_kg_by_row.get(rn, 0.0) + (ev.qty_kg or 0.0)
+
+        ais_by_ref: dict[str, ImportRow] = {}
+        for r in self.imports:
+            if r.bill_number:
+                ais_by_ref.setdefault(r.bill_number, r)
+
+        overstay_kg: dict[str, float] = {}
+        dates_by_ref: dict[str, set] = {}
+        hs_name: dict[str, tuple] = {}
+        for rn, ev in into_by_row.items():
+            if not ev.event_date or ev.event_date >= cutoff:
+                continue
+            remaining = (ev.qty_kg or 0.0) - ex_kg_by_row.get(rn, 0.0)
+            if remaining <= 1e-6:
+                continue
+            ref = ev.reference or f"row-{rn}"
+            overstay_kg[ref] = overstay_kg.get(ref, 0.0) + remaining
+            dates_by_ref.setdefault(ref, set()).add(ev.event_date)
+            hs_name[ref] = (ev.hs_code or "", ev.item_name or "")
+
+        if not overstay_kg:
+            return
+
+        groups: dict[tuple, list] = {}
+        for ref, kg in overstay_kg.items():
+            hs, name = hs_name.get(ref, ("", ""))
+            groups.setdefault((hs, normalize(name)[:60]), []).append((ref, kg, name))
+
+        serial = 0
+        for (hs, _), items in sorted(groups.items(), key=lambda kv: -sum(x[1] for x in kv[1])):
+            serial += 1
+            tb = TaxBreakdown()
+            refs, names, dates, no_tax = [], set(), set(), []
+            total_kg = 0.0
+            for ref, kg, name in items:
+                refs.append(ref)
+                names.add((name or "")[:60])
+                total_kg += kg
+                dates |= dates_by_ref.get(ref, set())
+                ais = ais_by_ref.get(ref)
+                if ais and (ais.qty_kg or 0) > 0:
+                    tb = tb + assess_bill(ais, min(1.0, kg / ais.qty_kg))
+                else:
+                    no_tax.append(ref)
+            tb = tb.round_all()
+            remarks = (
+                f"বন্ড রেজিস্টার (তফসিল-১) অনুযায়ী HS {hs or '—'} এর ইন্টু-বন্ড কাঁচামাল "
+                f"{total_kg:,.3f} কেজি নির্ধারিত মেয়াদ (working default {self.overstay_years:g} বছর — "
+                f"gazette citation অপেক্ষমাণ; কর্তন-তারিখ {cutoff.strftime('%d.%m.%Y')}) অতিক্রান্ত "
+                f"হইবার পরও বন্ডে অবশিষ্ট। শুল্ক-কর পরিশোধযোগ্য। " + BANK_GUARANTEE_NOTE
+            )
+            if no_tax:
+                remarks += (f" ⚠ বিল {', '.join(no_tax)} এর MIS/শুল্ক তথ্য মেলে নাই — ঐ অংশের "
+                            f"শুল্ক-কর নিরীক্ষক যাচাই করিবেন।")
+            result.overstay_records.append(OverstayRecord(
+                serial=serial, hs_code=hs,
+                item_name=", ".join(sorted(names))[:250],
+                bill_numbers=", ".join(refs),
+                into_bond_dates="; ".join(d.strftime("%d.%m.%Y") for d in sorted(dates)),
+                overstay_quantity_kg=round(total_kg, 3),
+                assessable_value_bdt=tb.assessable_value,
+                cd_demanded=tb.cd, rd_demanded=tb.rd, sd_demanded=tb.sd,
+                vat_demanded=tb.vat, at_demanded=tb.at, ait_demanded=tb.ait,
+                total_revenue_impact=tb.total,
+                assessment_basis=tb.basis or "MIS/BE ভিত্তিক (আনুপাতিক)",
+                cutoff_date=cutoff.strftime("%d.%m.%Y"),
+                legal_basis=self.OVERSTAY_LEGAL_BASIS, remarks=remarks,
+            ))
+
+        logger.info(f"দাবি ৬ overstay — {len(result.overstay_records)}টি রেকর্ড, "
+                    f"মোট {sum(r.total_revenue_impact for r in result.overstay_records):,.0f} টাকা")
 
     # ------------------------------------------------------
     def _build_cluster_excess(
@@ -2071,6 +2217,10 @@ class ImportAnalysisEngine:
                 sum(r.total_revenue_impact for r in pp), 2
             ),
             "মেয়াদোত্তর দাবি-রেকর্ড সংখ্যা": len(pp),
+            "দাবি ৬ — মেয়াদোত্তীর্ণ (২ বছর+) কাঁচামাল (BDT)": round(
+                sum(r.total_revenue_impact for r in result.overstay_records), 2
+            ),
+            "মেয়াদোত্তীর্ণ (overstay) রেকর্ড সংখ্যা": len(result.overstay_records),
             "বিধি ৮ বর্ধিত-প্রাপ্যতা পর্যবেক্ষণ (দাবি নহে)": len(result.rule8_observations),
             "সর্বমোট রাজস্ব দাবি (BDT)": round(
                 sum(r.total_revenue_impact for r in un)
@@ -2078,7 +2228,8 @@ class ImportAnalysisEngine:
                 + sum(r.total_revenue_impact for r in cx)
                 + sum(r.total_revenue_impact for r in breaches)
                 + sum(r.total_revenue_impact for r in cl)
-                + sum(r.total_revenue_impact for r in pp), 2
+                + sum(r.total_revenue_impact for r in pp)
+                + sum(r.total_revenue_impact for r in result.overstay_records), 2
             ),
             "ইহার মধ্যে উৎসে মূসক (স্থানীয় ক্রয়) (BDT)": round(
                 sum(r.source_vat_demanded for r in cx), 2
@@ -2090,6 +2241,6 @@ __all__ = [
     "ImportAnalysisEngine", "ImportAnalysisResult",
     "EntitlementRow", "ImportRow",
     "ExcessRecord", "UnauthorizedRecord", "UtilizationRecord",
-    "PostPeriodRecord", "Rule8Observation",
+    "PostPeriodRecord", "Rule8Observation", "OverstayRecord",
     "TOLERANCE",
 ]
