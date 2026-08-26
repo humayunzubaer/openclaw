@@ -32,6 +32,10 @@ from services.report_writer import write_report
 from services.checks.numeric import run_numeric_checks
 from services.checks.validity import run_validity_checks
 from services.checks.evidence import scan_documents
+from services.electricity_consistency import (
+    check_electricity_consistency,
+    DEFAULT_THRESHOLD_PCT,
+)
 from knowledge.check_specs import NUMERIC_CHECKS, VALIDITY_CHECKS
 from utils.logger import logger
 
@@ -255,6 +259,23 @@ async def checks_validity(body: dict = Body(default={})):
 async def checks_evidence_scan(body: dict = Body(default={})):
     """documents:[{id, filename, ocrText, ocrStatus?}] → Evidence Chips।"""
     return scan_documents(body.get("documents") or [], NUMERIC_CHECKS)
+
+
+@app.post("/api/checks/electricity")
+async def checks_electricity(body: dict = Body(default={})):
+    """
+    C5 — বিদ্যুৎ-উৎপাদন সামঞ্জস্য।
+    body: {declared_rate_per_unit, total_electricity_cost, produced_units,
+           unit?, threshold_pct?, monthly_costs?[]}
+    """
+    return asdict(check_electricity_consistency(
+        declared_rate_per_unit=float(body.get("declared_rate_per_unit") or 0),
+        total_electricity_cost=float(body.get("total_electricity_cost") or 0),
+        produced_units=float(body.get("produced_units") or 0),
+        unit=body.get("unit") or "কেজি",
+        threshold_pct=float(body.get("threshold_pct") or DEFAULT_THRESHOLD_PCT),
+        monthly_costs=body.get("monthly_costs"),
+    ))
 
 
 # ---- static frontend (সবার শেষে mount, যাতে /api/* আগে ম্যাচ করে) ----
