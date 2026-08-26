@@ -32,7 +32,7 @@ Document Requisition — দলিল-চাহিদাপত্র জেন�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, replace, asdict
 from datetime import date
 from enum import Enum
 from typing import Optional
@@ -747,6 +747,202 @@ RMG_DOCS: list[DocumentItem] = [
 
 
 # ==========================================================
+# ★ তফসিল-ছক মানচিত্র — কোন শ্রেণিতে কোন ছক প্রযোজ্য
+# ==========================================================
+#
+# এসআরও ২১২-আইন/২০২৪/৬৪/কাস্টমস — ১৫ বিধি ও ৫ তফসিল। তফসিল-৩ দুইটি
+# পৃথক ছকে বিভক্ত: ছক-ক (সরাসরি) ও ছক-খ (প্রচ্ছন্ন)। ফলে ছক-গণনায়
+# মোট ৬টি ছক, যাহার মধ্যে —
+#
+#     সরাসরি রপ্তানিমুখী (পোশাক ব্যতীত) : ৪টি
+#         তফসিল-১, তফসিল-২, তফসিল-৩ ছক-ক, তফসিল-৪
+#     প্রচ্ছন্ন রপ্তানিমুখী (পোশাক ব্যতীত) : ৫টি
+#         তফসিল-১, তফসিল-২, তফসিল-৩ ছক-খ, তফসিল-৪, তফসিল-৫
+#
+# পোশাক শিল্পে এসআরও ২১৩-আইন/২০২৪/৬৫ প্রযোজ্য — উহার নিজস্ব ৫ তফসিল
+# (`knowledge.sro213_rmg.SCHEDULES`) হইতে লওয়া হয়।
+
+SCHEDULE_STATUS_APPLIES = "প্রযোজ্য"
+SCHEDULE_STATUS_CONDITIONAL = "শর্তসাপেক্ষ"
+
+
+@dataclass
+class ScheduleForm:
+    """বিধিমালার একটি তফসিল/ছক এবং উহার প্রযোজ্যতা"""
+    schedule: str                 # "তফসিল-১"
+    title: str = ""
+    form: str = ""                # "ছক-ক" / "ফরম-‘ক’" (থাকিলে)
+    rule_ref: str = ""            # "বিধি ৭"
+    kind: str = ""                # রেজিস্টার-ছক | ইউপি-ফরম | বার্ষিক বিবরণী
+    columns: int = 0              # গেজেটে কলাম-সংখ্যা উল্লিখিত থাকিলে
+    applies_to: str = "উভয়"      # সরাসরি | প্রচ্ছন্ন | উভয়
+    annual_return: bool = False   # বার্ষিক নিরীক্ষায় দাখিলযোগ্য বিবরণী কি না
+    sro: str = "এসআরও ২১২-আইন/২০২৪/৬৪/কাস্টমস"
+    certainty: str = "V"
+    status: str = SCHEDULE_STATUS_APPLIES
+    note: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.schedule} {self.form}".strip()
+
+    def render(self) -> str:
+        bits = [self.label]
+        if self.title:
+            bits.append(f"— {self.title}")
+        if self.rule_ref:
+            bits.append(f"[{self.rule_ref}]")
+        return " ".join(bits)
+
+
+# ★ এসআরও ২১২ — ৫ তফসিল (তফসিল-৩ দুই ছকে বিভক্ত ⇒ ৬ ছক) 【V】
+SRO212_SCHEDULES: list[ScheduleForm] = [
+    ScheduleForm(
+        schedule="তফসিল-১",
+        title="বন্ড রেজিস্টার",
+        rule_ref="বিধি ৭",
+        kind="রেজিস্টার-ছক",
+        columns=16,
+        applies_to="উভয়",
+        note="দুই কপি — একটি ওয়্যারহাউসে, একটি বন্ড কর্মকর্তার নিকট; "
+             "দুই কপির মিলকরণ নিজেই একটি যাচাই।",
+    ),
+    ScheduleForm(
+        schedule="তফসিল-২",
+        title="ইউটিলাইজেশন পারমিশন (ইউপি) ফরম",
+        rule_ref="বিধি ১০",
+        kind="ইউপি-ফরম",
+        applies_to="উভয়",
+        note="১৬ ক্রমিক-ক্ষেত্র ও ৬টি অভ্যন্তরীণ টেবিল; ক্রমিক ১২ সহগ-ছক "
+             "(অপচয় গণনা) ও ক্রমিক ১৪(ঘ) মূল্য সংযোজনের হারের বিধিবদ্ধ স্থান।",
+    ),
+    ScheduleForm(
+        schedule="তফসিল-৩",
+        form="ছক-ক",
+        title="বার্ষিক আমদানি-রপ্তানি বিবরণী (সরাসরি রপ্তানি)",
+        rule_ref="বিধি ১৩",
+        kind="বার্ষিক বিবরণী",
+        columns=17,
+        applies_to="সরাসরি",
+        annual_return=True,
+        note="শিপিং বিল, রপ্তানিকৃত পরিমাণ, মোট রপ্তানি মূল্য ও "
+             "প্রত্যাবাসিত মূল্য — প্রত্যাবাসন যাচাইয়ের ভিত্তি।",
+    ),
+    ScheduleForm(
+        schedule="তফসিল-৩",
+        form="ছক-খ",
+        title="বার্ষিক আমদানি-রপ্তানি বিবরণী (প্রচ্ছন্ন রপ্তানি)",
+        rule_ref="বিধি ১৩",
+        kind="বার্ষিক বিবরণী",
+        columns=17,
+        applies_to="প্রচ্ছন্ন",
+        annual_return=True,
+        note="বিবিএলসি/মূসক চালান, সরবরাহকৃত পরিমাণ ও সরবরাহ-গ্রহীতার "
+             "নাম-ঠিকানা — সরাসরি রপ্তানির শিপিং বিলের স্থলাভিষিক্ত।",
+    ),
+    ScheduleForm(
+        schedule="তফসিল-৪",
+        title="ইউপি-ভিত্তিক কাঁচামাল ব্যবহারের বিবরণী",
+        rule_ref="বিধি ১৩(৩)",
+        kind="বার্ষিক বিবরণী",
+        applies_to="উভয়",
+        annual_return=True,
+        note="কাঁচামালের সংখ্যা অনুযায়ী কলাম কম-বেশি করা যাইবে; শেষ কলামে "
+             "পরিদপ্তরের (DEDO) সহগ মোতাবেক ব্যবহৃত হইয়াছে কি না।",
+    ),
+    ScheduleForm(
+        schedule="তফসিল-৫",
+        title="প্রচ্ছন্ন রপ্তানির ইউপি-বিবিএলসি ভিত্তিক সরবরাহ ও "
+              "মূল্য প্রত্যাবাসনের বিবরণী",
+        rule_ref="বিধি ১৩(৩)",
+        kind="বার্ষিক বিবরণী",
+        applies_to="প্রচ্ছন্ন",
+        annual_return=True,
+        note="বিবিএলসি-স্তর ও মাস্টার এলসি-স্তর — দুই স্তরেই মোট বনাম "
+             "প্রত্যাবাসিত মূল্যের কলাম; ফাঁক = প্রত্যাবাসন-অসঙ্গতি।",
+    ),
+]
+
+
+def _rmg_schedules() -> list[ScheduleForm]:
+    """এসআরও ২১৩ (পোশাক শিল্প) এর তফসিলসমূহ — knowledge মডিউল হইতে"""
+    try:
+        from knowledge.sro213_rmg import SCHEDULES as _S
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[ScheduleForm] = []
+    for d in _S:
+        out.append(ScheduleForm(
+            schedule=d.get("নং", ""),
+            title=d.get("শিরোনাম", ""),
+            form=d.get("ফরম", ""),
+            rule_ref=d.get("দ্রষ্টব্য", ""),
+            kind=d.get("ধরন", ""),
+            columns=int(d.get("কলাম সংখ্যা", 0) or 0),
+            applies_to="সরাসরি",
+            annual_return="বিবরণী" in d.get("ধরন", ""),
+            sro="এসআরও ২১৩-আইন/২০২৪/৬৫/কাস্টমস [পোশাক শিল্প]",
+            certainty=d.get("certainty", "V"),
+        ))
+    return out
+
+
+def applicable_schedules(
+    entity_type: EntityType | str,
+    also_deemed: bool = False,
+) -> list[ScheduleForm]:
+    """
+    ★ প্রতিষ্ঠানের শ্রেণি অনুযায়ী প্রযোজ্য তফসিল-ছকসমূহ ফেরত দেয়।
+
+    সরাসরি (পোশাক ব্যতীত) : ৪টি ছক — তফসিল-১, ২, ৩ ছক-ক, ৪
+    প্রচ্ছন্ন (পোশাক ব্যতীত): ৫টি ছক — তফসিল-১, ২, ৩ ছক-খ, ৪, ৫
+    পোশাক শিল্প            : এসআরও ২১৩ এর ৫ তফসিল; যুগপৎ হইলে (also_deemed)
+                             প্রচ্ছন্ন অংশের এসআরও ২১২ ছকসমূহ যুক্ত হয়
+                             [এসআরও ২১২ বিধি ১০(১) শর্তাংশ]।
+    """
+    et = EntityType(entity_type) if isinstance(entity_type, str) else entity_type
+    traits = ENTITY_TRAITS[et]
+    is_epz, is_deemed, is_rmg = traits["epz"], traits["deemed"], traits["rmg"]
+
+    if is_rmg:
+        out = _rmg_schedules()
+        if also_deemed:
+            for sf in SRO212_SCHEDULES:
+                if sf.applies_to in ("প্রচ্ছন্ন", "উভয়"):
+                    out.append(replace(
+                        sf,
+                        status=SCHEDULE_STATUS_CONDITIONAL,
+                        note=(sf.note + " ★ যুগপৎ প্রতিষ্ঠানের প্রচ্ছন্ন "
+                              "রপ্তানি অংশের জন্য প্রযোজ্য "
+                              "[এসআরও ২১২ বিধি ১০(১) শর্তাংশ]।").strip(),
+                    ))
+        return out
+
+    want = "প্রচ্ছন্ন" if is_deemed else "সরাসরি"
+    out = [
+        sf for sf in SRO212_SCHEDULES
+        if sf.applies_to == "উভয়" or sf.applies_to == want
+    ]
+
+    if is_epz:
+        # ইপিজেডে ইউপির স্থলে বেপজা আইপি/ইপি — ইউপি-নির্ভর ছক শর্তসাপেক্ষ
+        out = [
+            replace(
+                sf,
+                status=SCHEDULE_STATUS_CONDITIONAL,
+                certainty="E",
+                note=(sf.note + " ★ ইপিজেডস্থ প্রতিষ্ঠান ইউপি গ্রহণ করে না; "
+                      "বেপজা প্রদত্ত আইপি/ইপি-ভিত্তিক সমতুল্য বিবরণী "
+                      "প্রযোজ্য — নিরীক্ষক যাচাই করিবেন।").strip(),
+            )
+            if sf.kind == "ইউপি-ফরম" or "ইউপি" in sf.title
+            else sf
+            for sf in out
+        ]
+    return out
+
+
+# ==========================================================
 # চাহিদাপত্র জেনারেটর
 # ==========================================================
 
@@ -765,6 +961,8 @@ class Requisition:
 
     documents: list[DocumentItem] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # ★ প্রযোজ্য তফসিল-ছক (বিধিমালার ফরম/বিবরণী)
+    schedules: list[ScheduleForm] = field(default_factory=list)
 
     @property
     def by_category(self) -> dict[str, list[DocumentItem]]:
@@ -776,6 +974,11 @@ class Requisition:
     @property
     def mandatory_count(self) -> int:
         return sum(1 for d in self.documents if d.mandatory)
+
+    @property
+    def annual_return_schedules(self) -> list[ScheduleForm]:
+        """বার্ষিক নিরীক্ষায় দাখিলযোগ্য বিবরণী-ছকসমূহ [বিধি ১৩]"""
+        return [s for s in self.schedules if s.annual_return]
 
 
 # বিভাগের প্রদর্শন-ক্রম
@@ -903,6 +1106,18 @@ def build_requisition(
     for i, d in enumerate(ordered, start=1):
         d.serial = str(i)
 
+    # ---- প্রযোজ্য তফসিল-ছক ----
+    schedules = applicable_schedules(et, also_deemed=also_deemed)
+    ann = [x for x in schedules if x.annual_return]
+    if schedules:
+        notes.append(
+            f"প্রযোজ্য তফসিল-ছক: মোট {_bn(len(schedules))}টি — "
+            + ", ".join(x.label for x in schedules)
+            + (f"; ইহার মধ্যে বার্ষিক নিরীক্ষায় দাখিলযোগ্য বিবরণী "
+               f"{_bn(len(ann))}টি ("
+               + ", ".join(x.label for x in ann) + ")।" if ann else "।")
+        )
+
     notes.append(f"প্রযোজ্য বিধিমালা: {ENTITY_SRO[et]}")
     notes.append(
         "দলিলাদি দাখিলের সময়সীমা: লাইসেন্স-বর্ষ সমাপ্তির ৬০ (ষাট) দিনের "
@@ -918,7 +1133,7 @@ def build_requisition(
         company_name=company_name, bond_license=bond_license,
         period_from=period_from, period_to=period_to,
         audit_ref=audit_ref, issue_date=date.today(),
-        documents=ordered, notes=notes,
+        documents=ordered, notes=notes, schedules=schedules,
     )
 
 
@@ -984,6 +1199,26 @@ def render_requisition(req: Requisition, show_legal: bool = True) -> str:
                 L.append(f"       ★ {d.note}")
         L.append("")
 
+    if req.schedules:
+        L.append("【প্রযোজ্য তফসিল-ছক】")
+        for i, sf in enumerate(req.schedules, start=1):
+            tail = "" if sf.status == SCHEDULE_STATUS_APPLIES else f"  ({sf.status})"
+            L.append(f"  {_bn(i)}। {sf.render()}{tail}")
+            meta = []
+            if sf.kind:
+                meta.append(sf.kind)
+            if sf.columns:
+                meta.append(f"{_bn(sf.columns)} কলাম")
+            if sf.annual_return:
+                meta.append("বার্ষিক নিরীক্ষায় দাখিলযোগ্য")
+            if meta:
+                L.append("       ধরন: " + " · ".join(meta))
+            if show_legal and sf.sro:
+                L.append(f"       আইনি ভিত্তি: {sf.sro}")
+            if sf.note:
+                L.append(f"       ★ {sf.note}")
+        L.append("")
+
     if req.notes:
         L.append("বিশেষ দ্রষ্টব্য:")
         for n in req.notes:
@@ -1001,4 +1236,6 @@ __all__ = [
     "EntityType", "ENTITY_LABELS", "ENTITY_TRAITS", "ENTITY_SRO", "RMG_DOCS", "DocumentItem", "Requisition",
     "COMMON_DOCS", "DIRECT_DOCS", "DEEMED_DOCS", "EPZ_DOCS",
     "build_requisition", "render_requisition", "CATEGORY_ORDER",
+    "ScheduleForm", "SRO212_SCHEDULES", "applicable_schedules",
+    "SCHEDULE_STATUS_APPLIES", "SCHEDULE_STATUS_CONDITIONAL",
 ]
