@@ -32,6 +32,9 @@ from services.report_writer import write_report
 from services.checks.numeric import run_numeric_checks
 from services.checks.validity import run_validity_checks
 from services.checks.evidence import scan_documents
+from services.schedule_checks import (
+    check_coefficient_validity, check_up_arithmetic,
+)
 from services.electricity_consistency import (
     check_electricity_consistency,
     DEFAULT_THRESHOLD_PCT,
@@ -86,6 +89,7 @@ def _run_engine(
     extension_applies: bool = False,
     register_path: Optional[str] = None,
     provisional_entitlement_date: Optional[date] = None,
+    commissioner_extension_days: int = 0,
 ):
     """ফাইল লোড করে ImportAnalysisEngine চালায়; (result, dl, meta) ফেরত দেয়"""
     dl = DataLoader(verbose=False)
@@ -122,6 +126,7 @@ def _run_engine(
         warehouse_capacity_mt=warehouse_capacity_mt or 0.0,
         extension_applies=extension_applies,
         provisional_entitlement_date=provisional_entitlement_date,
+        commissioner_extension_days=commissioner_extension_days,
         bonding_capacity_value_bdt=dl.bonding_capacity.get("value_bdt", 0.0),
         bonding_capacity_value_usd=dl.bonding_capacity.get("value_usd", 0.0),
         ledger_events=ledger_events,
@@ -153,6 +158,9 @@ def _result_payload(result, dl) -> dict:
             "post_period": [asdict(r) for r in result.post_period_records],
             "rule8": [asdict(r) for r in result.rule8_observations],
             "provisional": [asdict(r) for r in result.provisional_records],
+            "into_bond_delay": [
+                asdict(r) for r in result.into_bond_delay_records
+            ],
             "overstay": [asdict(r) for r in result.overstay_records],
             "capacity_breach": [asdict(r) for r in result.capacity_breach_records],
             "capacity_limit": [asdict(r) for r in result.capacity_limit_records],
@@ -181,6 +189,7 @@ async def analyze_import(
     warehouse_capacity_mt: float = Form(0.0),
     extension_applies: bool = Form(False),
     provisional_entitlement_date: Optional[str] = Form(None),
+    commissioner_extension_days: int = Form(0),
 ):
     """প্রাপ্যতা + আমদানি বিশ্লেষণ করে ফলাফল (JSON) ফেরত দেয়"""
     nxt = _parse_date(next_entitlement_date)
@@ -194,7 +203,7 @@ async def analyze_import(
             result, dl, _ = _run_engine(
                 ent_path, imp_path, local_path, nxt,
                 bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
-                register_path, prov_dt,
+                register_path, prov_dt, commissioner_extension_days,
             )
         except HTTPException:
             raise
@@ -215,6 +224,7 @@ async def analyze_import_xlsx(
     warehouse_capacity_mt: float = Form(0.0),
     extension_applies: bool = Form(False),
     provisional_entitlement_date: Optional[str] = Form(None),
+    commissioner_extension_days: int = Form(0),
 ):
     """একই বিশ্লেষণ; ১০-শীট Excel কার্যপত্র (.xlsx) ডাউনলোড হিসেবে ফেরত দেয়"""
     nxt = _parse_date(next_entitlement_date)
@@ -228,7 +238,7 @@ async def analyze_import_xlsx(
         result, _, meta = _run_engine(
             ent_path, imp_path, local_path, nxt,
             bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
-            register_path, prov_dt,
+            register_path, prov_dt, commissioner_extension_days,
         )
         out = Path(tmp) / "audit_workpaper.xlsx"
         write_report(result, out, meta)
@@ -266,6 +276,29 @@ async def checks_validity(body: dict = Body(default={})):
 async def checks_evidence_scan(body: dict = Body(default={})):
     """documents:[{id, filename, ocrText, ocrStatus?}] → Evidence Chips।"""
     return scan_documents(body.get("documents") or [], NUMERIC_CHECKS)
+
+
+@app.post("/api/checks/coefficient-validity")
+async def checks_coefficient_validity(body: dict = Body(default={})):
+    """
+    বিধি ৯ — ইউপি ইস্যুর তারিখে DEDO সহগ বৈধ ছিল কি না।
+    body: {ups:[{up_no, issue_date, coefficient_ref, valid_from, valid_to,
+                 similar_coefficient?, similar_since?}]}
+    """
+    return [asdict(r) for r in check_coefficient_validity(body.get("ups") or [])]
+
+
+@app.post("/api/checks/up-arithmetic")
+async def checks_up_arithmetic(body: dict = Body(default={})):
+    """
+    ইউপির গাণিতিক যোগফল — ঘোষিত মোট বনাম লাইন আইটেমের যোগফল।
+    body: {ups:[{up_no, declared_total, line_items:[...], unit?}], tolerance?}
+    """
+    return [
+        asdict(r) for r in check_up_arithmetic(
+            body.get("ups") or [], tolerance=float(body.get("tolerance") or 0.0)
+        )
+    ]
 
 
 @app.post("/api/checks/electricity")

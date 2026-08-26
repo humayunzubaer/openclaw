@@ -303,6 +303,9 @@ class LedgerEvent:
     reference: str = ""        # বিল অব এন্ট্রি / চালান
     row_number: int = 0        # ★ রেজিস্টারের সারি নম্বর — সংযোগসূত্র
     source_row: Any = None     # সংশ্লিষ্ট ImportRow — শুল্কায়নের জন্য
+    # ★ তফসিল-১ কলাম ৩ — কাস্টম হাউস হইতে ছাড়করণের (ASYCUDA Exit Note) তারিখ।
+    #   ইন্টু-বন্ড ঘটনায় প্রযোজ্য; বিধি ৮ এর বিলম্ব-যাচাইয়ে ব্যবহৃত।
+    release_date: Optional[date] = None
 
 
 @dataclass
@@ -654,6 +657,7 @@ class BondRegisterReader:
         "qty_kg": ["কেজি", "kg", "kilogram"],
         "qty_meter": ["মিটার", "meter", "mtr"],
         "qty_yard": ["গজ", "yard", "yds"],
+        "release_date": ["ছাড়করণ", "এক্সিট নোট", "exit note", "ছাড়কর"],
         "into_date": ["ইন্টু বন্ড", "into bond", "ইন্টু-বন্ড"],
         "ex_date": ["এক্স বন্ড", "ex bond", "এক্স-বন্ড", "এি বন্ড"],
         "ex_qty": ["এক্সবন্ডকৃত", "এিবন্ডকৃত", "ex bond qty", "উত্তোলন"],
@@ -683,7 +687,18 @@ class BondRegisterReader:
             raise ValueError("বন্ড রেজিস্টারে পাঠযোগ্য শীট পাওয়া যায় নাই")
 
         df = self.excel.get_clean_data(res.get_sheet(best))
-        cols = self._map_columns(df.columns)
+        # ★ ExcelEngine হেডারকে canonical নামে (bill_date, quantity …) রূপান্তর
+        #   করে, ফলে তফসিল-১ এর বাংলা শিরোনাম হারাইয়া যায়। তাই মূল হেডার-পাঠ
+        #   অবস্থানসহ পুনরায় লইয়া সেই অনুযায়ী কলাম শনাক্ত করা হয়।
+        prof = next((sp for sp in res.sheets if sp.sheet_name == best), None)
+        orig = self._original_headers(file_path, prof)
+        positions = getattr(prof, "column_positions", None) if prof else None
+        cols = self._map_columns(df.columns, orig, positions)
+        # ★ "বিল অব এন্ট্রি নম্বর ও তারিখ" কলামটি canonical `bill_date` হইয়া
+        #   যাওয়ায় নম্বরের পাঠ্যমান তারিখ-রূপান্তরে হারাইয়া যায়; তাই মূল শীট
+        #   হইতে অবস্থান ধরিয়া উহা পুনরুদ্ধার করা হয়।
+        raw_sheet = self._raw_sheet(file_path, prof)
+        be_pos = (positions or {}).get(cols.get("be_no", ""), None)
         self.notes.append(f"রেজিস্টার শীট: '{best}' | শনাক্তকৃত কলাম: {list(cols.keys())}")
 
         missing = [k for k in ("qty_kg",) if k not in cols]
@@ -698,16 +713,20 @@ class BondRegisterReader:
             hs = clean_hs_code(row.get(cols.get("hs_code", ""), None))
             name = self._s(row.get(cols.get("item_name", ""), None))
             ref = self._s(row.get(cols.get("be_no", ""), None))
+            if not ref and raw_sheet is not None and be_pos is not None:
+                ref = self._raw_text(raw_sheet, row.get("_raw_row"), be_pos)
             qty_kg = clean_number(row.get(cols.get("qty_kg", ""), None)) or 0.0
 
             # --- ইন্টু বন্ড ---
             into_date = self._as_date(row.get(cols.get("into_date", ""), None))
+            rel_date = self._as_date(row.get(cols.get("release_date", ""), None))
             if into_date and qty_kg > 0:
                 events.append(LedgerEvent(
                     event_date=into_date, kind="into_bond",
                     hs_code=hs or "", item_name=name,
                     qty_kg=qty_kg, reference=ref or f"সারি {idx+1}",
                     row_number=int(idx) + 1,
+                    release_date=rel_date,
                 ))
 
             # --- এক্স বন্ড ---
@@ -734,17 +753,96 @@ class BondRegisterReader:
         return events
 
     # ------------------------------------------------------
-    def _map_columns(self, columns) -> dict[str, str]:
-        """তফসিল-১ এর কলাম শনাক্ত করো"""
+    def _original_headers(self, file_path, profile) -> dict[int, str]:
+        """হেডার-সারির মূল (অ-রূপান্তরিত) পাঠ — কলাম-অবস্থান অনুযায়ী"""
+        if profile is None or profile.header_row is None:
+            return {}
+        try:
+            path = str(file_path)
+            if path.lower().endswith(".csv"):
+                raw = pd.read_csv(path, header=None,
+                                  nrows=profile.header_row + 1, dtype=str)
+            else:
+                raw = pd.read_excel(path, sheet_name=profile.sheet_name,
+                                    header=None, nrows=profile.header_row + 1)
+        except Exception:  # noqa: BLE001
+            return {}
+        if profile.header_row >= len(raw):
+            return {}
+        row = raw.iloc[profile.header_row]
+        out: dict[int, str] = {}
+        for i, v in enumerate(row):
+            txt = "" if v is None else str(v).strip()
+            if txt and txt.lower() != "nan":
+                out[i] = txt
+        return out
+
+    @staticmethod
+    def _raw_text(raw_sheet, raw_row, pos) -> str:
+        """মূল শীটের একটি ঘর হইতে পাঠ্যমান"""
+        try:
+            r = int(raw_row)
+        except (TypeError, ValueError):
+            return ""
+        if r < 0 or r >= len(raw_sheet) or pos >= raw_sheet.shape[1]:
+            return ""
+        v = raw_sheet.iat[r, pos]
+        txt = "" if v is None else str(v).strip()
+        return "" if txt.lower() in ("nan", "nat") else txt
+
+    def _raw_sheet(self, file_path, profile):
+        """হেডার-বিহীন মূল শীট — coercion-পূর্ব পাঠ্যমান উদ্ধারের জন্য"""
+        if profile is None:
+            return None
+        try:
+            path = str(file_path)
+            if path.lower().endswith(".csv"):
+                return pd.read_csv(path, header=None, dtype=object)
+            return pd.read_excel(path, sheet_name=profile.sheet_name,
+                                 header=None, dtype=object)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _map_columns(
+        self, columns, orig_by_pos: dict[int, str] | None = None,
+        positions: dict[str, int] | None = None,
+    ) -> dict[str, str]:
+        """
+        তফসিল-১ এর কলাম শনাক্ত করো।
+
+        প্রথমে বর্তমান কলাম-নামে মিলকরণ; না মিলিলে হেডারের **মূল পাঠ**
+        (অবস্থানসহ) দেখিয়া মিলানো হয় — কারণ ExcelEngine বাংলা শিরোনামকে
+        canonical নামে রূপান্তর করিয়া ফেলে।
+        """
         out: dict[str, str] = {}
         cols = [str(c) for c in columns]
+
+        def _hit(text: str, hints) -> bool:
+            low = text.lower()
+            return any(h in low or h in text for h in hints)
+
+        # ধাপ ১ — বর্তমান কলাম-নাম
         for key, hints in self.COL_HINTS.items():
             for col in cols:
-                low = col.lower()
-                if any(h in low or h in col for h in hints):
-                    if key not in out:
-                        out[key] = col
+                if _hit(col, hints):
+                    out.setdefault(key, col)
                     break
+
+        # ধাপ ২ — মূল হেডার-পাঠ (অবস্থান → বর্তমান নাম)
+        if orig_by_pos and positions:
+            pos_to_name = {v: k for k, v in positions.items()}
+            taken = set(out.values())
+            for key, hints in self.COL_HINTS.items():
+                if key in out:
+                    continue
+                for pos, text in orig_by_pos.items():
+                    if not _hit(text, hints):
+                        continue
+                    name = pos_to_name.get(pos)
+                    if name and name in cols and name not in taken:
+                        out[key] = name
+                        taken.add(name)
+                        break
         return out
 
     # ------------------------------------------------------

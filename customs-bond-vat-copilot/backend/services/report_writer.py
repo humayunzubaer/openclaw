@@ -172,6 +172,23 @@ COLS_PROVISIONAL = [
     ("demand_proposal", "★ দাবিনামা জারির প্রস্তাব", 90, None),
 ]
 
+COLS_INTO_BOND_DELAY = [
+    ("serial", "ক্রমিক", 7, None),
+    ("row_number", "রেজিস্টার সারি", 13, None),
+    ("reference", "বিল অব এন্ট্রি নং", 24, None),
+    ("hs_code", "এইচ.এস কোড", 16, None),
+    ("item_name", "পণ্যের বিবরণ", 34, None),
+    ("release_date", "ছাড়করণ (এক্সিট নোট)", 20, None),
+    ("into_bond_date", "ইন্টু বন্ডের তারিখ", 18, None),
+    ("quantity_kg", "পরিমাণ (কেজি)", 15, FMT_QTY),
+    ("delay_days", "ব্যবধান (দিন)", 14, None),
+    ("allowed_days", "অনুমোদিত (দিন)", 15, None),
+    ("excess_days", "বিলম্ব (দিন)", 13, None),
+    ("status", "অবস্থা", 20, None),
+    ("legal_basis", "আইনি ভিত্তি", 55, None),
+    ("remarks", "মন্তব্য", 80, None),
+]
+
 COLS_BREACH = [
     ("serial", "লঙ্ঘন নং", 10, None),
     ("breach_date", "লঙ্ঘনের তারিখ", 15, None),
@@ -423,6 +440,7 @@ class ExcelReportWriter:
         self._sheet_post_period()
         self._sheet_overstay()
         self._sheet_provisional()
+        self._sheet_into_bond_delay()
         self._sheet_bonding()
         self._sheet_ledger()
         self._sheet_capacity_limit()
@@ -661,6 +679,25 @@ class ExcelReportWriter:
             ws, 4, COLS_PROVISIONAL,
             getattr(self.result, "provisional_records", []),
             highlight_field="excess_quantity",
+        )
+
+    # ------------------------------------------------------
+    def _sheet_into_bond_delay(self):
+        ws = self.wb.create_sheet("২ঘ. ইন্টু-বন্ড বিলম্ব")
+        _style_title(
+            ws, 1,
+            "ছাড়করণ হইতে ইন্টু-বন্ডের বিলম্ব যাচাই [এসআরও ২১২/২০২৪, বিধি ৮]",
+            len(COLS_INTO_BOND_DELAY),
+            "পণ্যচালান কাস্টম হাউস হইতে ছাড়করণের (ASYCUDA এক্সিট নোট) তারিখ হইতে "
+            "৫ (পাঁচ) দিনের মধ্যে ওয়্যারহাউসে ইন্টু-বন্ড করিতে হইবে; যুক্তিসংগত "
+            "কারণে কমিশনার সর্বোচ্চ ৭ (সাত) দিন পর্যন্ত সময় বর্ধিত করিতে পারিবেন। "
+            "তফসিল-১ এর কলাম ৩ ও কলাম ১১ হইতে auto-নির্ণীত। সীমা অতিক্রান্ত "
+            "প্রবেশের ক্ষেত্রে বিলম্বের কারণ ও সময়-বর্ধিতকরণ আদেশ তলব করিতে হইবে।"
+        )
+        _write_table(
+            ws, 4, COLS_INTO_BOND_DELAY,
+            getattr(self.result, "into_bond_delay_records", []),
+            highlight_field="excess_days",
         )
 
     # ------------------------------------------------------

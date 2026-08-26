@@ -40,6 +40,9 @@ from services.capacity_ledger import (
     BreachAssessment,
 )
 from services.unit_extractor import UnitExtractor, UnitExtractionResult
+from services.schedule_checks import (
+    check_into_bond_delay, IntoBondDelayRecord,
+)
 from services.bonding_rules import (
     resolve_capacity, check_capacity_limit, determine_regime,
     split_audit_period, PeriodSegment, NEW_REGIME_DATE,
@@ -729,6 +732,9 @@ class ImportAnalysisResult:
     provisional_records: list[ProvisionalEntitlementRecord] = field(
         default_factory=list
     )
+    into_bond_delay_records: list[IntoBondDelayRecord] = field(
+        default_factory=list
+    )
     overstay_records: list[OverstayRecord] = field(default_factory=list)
     machinery_records: list[MachineryRecord] = field(default_factory=list)
     bonding_records: list[BondingCapacityRecord] = field(default_factory=list)
@@ -782,6 +788,9 @@ class ImportAnalysisResult:
             ),
             "বিয়োজনের শর্তে প্রাপ্যতা": pd.DataFrame(
                 [asdict(r) for r in self.provisional_records]
+            ),
+            "ইন্টু-বন্ড বিলম্ব [বিধি ৮]": pd.DataFrame(
+                [asdict(r) for r in self.into_bond_delay_records]
             ),
             "মেয়াদোত্তীর্ণ (দাবি ৬)": pd.DataFrame(
                 [asdict(r) for r in self.overstay_records]
@@ -838,6 +847,7 @@ class ImportAnalysisEngine:
         bond_license_capacity_mt: float = 0.0,
         extension_applies: bool = False,
         provisional_entitlement_date: date | None = None,
+        commissioner_extension_days: int = 0,
         overstay_years: float = 2.0,
         overstay_as_of: date | None = None,
     ):
@@ -868,6 +878,9 @@ class ImportAnalysisEngine:
         #   ভাজক (÷৩ বনাম ÷৪) নির্ণয়ে ব্যবহৃত। None হইলে next_entitlement_date,
         #   তাহাও না থাকিলে মেয়াদ-সমাপ্তি ধরা হয় (সতর্কতাসহ)।
         self.provisional_entitlement_date = provisional_entitlement_date
+        # ★ বিধি ৮ — কমিশনার কর্তৃক ইন্টু-বন্ডের সময় বর্ধিতকরণ (০–৭ দিন)।
+        #   অনুমোদনপত্র থাকিলে নিরীক্ষক দিবেন; নতুবা ০ (মূল ৫ দিন)।
+        self.commissioner_extension_days = commissioner_extension_days
         # ★ দাবি ৬ (overstay) — মেয়াদ সীমা (বছর, working default ২.০) ও রেফারেন্স তারিখ।
         self.overstay_years = overstay_years or 2.0
         self.overstay_as_of = overstay_as_of
@@ -1042,6 +1055,9 @@ class ImportAnalysisEngine:
 
         # ধাপ ৪.৭: ★ দাবি ৬ — মেয়াদোত্তীর্ণ (overstay) কাঁচামাল (রেজিস্টার-ভিত্তিক)
         self._build_overstay(result)
+
+        # ধাপ ৪.৮: ★ বিধি ৮ — ছাড়করণ হইতে ইন্টু-বন্ডের বিলম্ব (রেজিস্টার-ভিত্তিক)
+        self._build_into_bond_delay(result)
 
         # ধাপ ৫: মেশিনারিজ তালিকা
         self._build_machinery(machinery, result)
@@ -1557,6 +1573,46 @@ class ImportAnalysisEngine:
         "সময় ঐ পরিমাণ বিয়োজন হইয়াছে কিনা নিশ্চিত করিবেন — বিয়োজন না হইলে "
         "পর্যবেক্ষণ হিসাবে লিপিবদ্ধ করিবেন।"
     )
+
+    def _build_into_bond_delay(self, result: ImportAnalysisResult):
+        """
+        ★ বিধি ৮ — পণ্যচালান ছাড়করণের (এক্সিট নোট) তারিখ হইতে ৫ দিনের মধ্যে
+        ইন্টু-বন্ড হইয়াছে কি না। কমিশনার-বর্ধিত সময় (সর্বোচ্চ ৭ দিন) থাকিলে
+        নিরীক্ষক `commissioner_extension_days` দিবেন।
+
+        সম্পূর্ণ রেজিস্টার-ভিত্তিক — তফসিল-১ কলাম ৩ ও ১১।
+        """
+        if not self.ledger_events:
+            return
+
+        records = check_into_bond_delay(
+            self.ledger_events,
+            commissioner_extension_days=self.commissioner_extension_days,
+        )
+        if not records:
+            return
+        result.into_bond_delay_records = records
+
+        breaches = [r for r in records if r.status == "সীমা অতিক্রম"]
+        missing = [r for r in records if r.status == "তথ্য অসম্পূর্ণ"]
+        disorder = [r for r in records if r.status == "ক্রম-বিপর্যয়"]
+
+        if breaches:
+            result.warnings.append(
+                f"⛔ বিধি ৮ (ইন্টু-বন্ড বিলম্ব): {len(breaches)}টি প্রবেশ "
+                "নির্ধারিত সময়সীমার পর বন্ডে লওয়া হইয়াছে। বিলম্বের কারণ ও "
+                "কমিশনারের সময়-বর্ধিতকরণ আদেশ (থাকিলে) তলব করুন।"
+            )
+        if disorder:
+            result.warnings.append(
+                f"⚠ বিধি ৮: {len(disorder)}টি সারিতে ইন্টু-বন্ডের তারিখ "
+                "ছাড়করণের তারিখের পূর্বে — রেজিস্টার-ভুক্তি অসঙ্গতিপূর্ণ।"
+            )
+        if missing:
+            result.warnings.append(
+                f"ℹ বিধি ৮: {len(missing)}টি প্রবেশে ছাড়করণের (এক্সিট নোট) "
+                "তারিখ পাওয়া যায় নাই — ঐ প্রবেশগুলির বিলম্ব যাচাই করা যায় নাই।"
+            )
 
     def _build_provisional_entitlement(self, result: ImportAnalysisResult):
         """
@@ -2383,6 +2439,13 @@ class ImportAnalysisEngine:
             "বিয়োজনের শর্তে প্রাপ্যতা — যাচাইকৃত একক": len(result.provisional_records),
             "বিয়োজনের শর্তে প্রাপ্যতা — সীমা অতিক্রম": sum(
                 1 for r in result.provisional_records if r.status == "সীমা অতিক্রম"
+            ),
+            "ইন্টু-বন্ড বিলম্ব [বিধি ৮] — যাচাইকৃত প্রবেশ": len(
+                result.into_bond_delay_records
+            ),
+            "ইন্টু-বন্ড বিলম্ব [বিধি ৮] — সীমা অতিক্রম": sum(
+                1 for r in result.into_bond_delay_records
+                if r.status == "সীমা অতিক্রম"
             ),
             "সর্বমোট রাজস্ব দাবি (BDT)": round(
                 sum(r.total_revenue_impact for r in un)
