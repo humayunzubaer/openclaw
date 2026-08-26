@@ -155,6 +155,23 @@ COLS_OVERSTAY = [
     ("remarks", "মন্তব্য", 70, None),
 ]
 
+COLS_PROVISIONAL = [
+    ("serial", "ক্রমিক", 7, None),
+    ("entitlement_item", "প্রাপ্যতা-একক", 42, None),
+    ("unit", "একক", 8, None),
+    ("next_period_probable", "আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা", 26, FMT_QTY),
+    ("divisor_label", "প্রযোজ্য সীমা", 20, None),
+    ("allowed_cap", "সর্বোচ্চ গ্রহণযোগ্য", 20, FMT_QTY),
+    ("provisional_taken", "গৃহীত সাময়িক প্রাপ্যতা", 22, FMT_QTY),
+    ("excess_quantity", "সীমার অতিরিক্ত", 16, FMT_QTY),
+    ("excess_pct", "অতিরিক্ত (%)", 12, FMT_PCT),
+    ("status", "অবস্থা", 34, None),
+    ("reference_date", "সূত্র-তারিখ", 14, None),
+    ("legal_basis", "আইনি ভিত্তি", 50, None),
+    ("explanation", "গণনার ব্যাখ্যা", 76, None),
+    ("demand_proposal", "★ দাবিনামা জারির প্রস্তাব", 90, None),
+]
+
 COLS_BREACH = [
     ("serial", "লঙ্ঘন নং", 10, None),
     ("breach_date", "লঙ্ঘনের তারিখ", 15, None),
@@ -405,6 +422,7 @@ class ExcelReportWriter:
         self._sheet_unauthorized()
         self._sheet_post_period()
         self._sheet_overstay()
+        self._sheet_provisional()
         self._sheet_bonding()
         self._sheet_ledger()
         self._sheet_capacity_limit()
@@ -622,6 +640,27 @@ class ExcelReportWriter:
                 "rd_demanded", "sd_demanded", "vat_demanded", "at_demanded",
                 "ait_demanded", "total_revenue_impact",
             ],
+        )
+
+    # ------------------------------------------------------
+    def _sheet_provisional(self):
+        ws = self.wb.create_sheet("২গ. বিয়োজনের শর্তে প্রাপ্যতা")
+        _style_title(
+            ws, 1,
+            "বিয়োজনের শর্তে গৃহীত সাময়িক আমদানি প্রাপ্যতার ঊর্ধ্বসীমা যাচাই",
+            len(COLS_PROVISIONAL),
+            "নিরীক্ষা চলাকালে প্রতিষ্ঠান আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা হইতে বিয়োজনের "
+            "শর্তে সাময়িক আমদানি প্রাপ্যতা গ্রহণ করিতে পারে। উক্ত পরিমাণ সম্ভাব্য "
+            "প্রাপ্যতার এক-তৃতীয়াংশ (০১.০৭.২০২৬ এর পূর্বে) বা এক-চতুর্থাংশ (উক্ত তারিখ "
+            "ও তৎপরবর্তী) অতিক্রম করিতে পারিবে না। সীমাতিরিক্ত অংশ বৈধ প্রাপ্যতা নহে "
+            "বিধায় মোট অনুমোদিত প্রাপ্যতা হইতে বাদ দেওয়া হইয়াছে — উহার বিপরীতে "
+            "আমদানিকৃত কাঁচামাল দাবি ২ (প্রাপ্যতার অতিরিক্ত আমদানি) হিসাবে শুল্কায়িত; "
+            "কাস্টমস আইন, ২০২৩ এর ধারা ২৩৮ অনুযায়ী দাবিনামা জারির প্রস্তাব করা হইয়াছে।"
+        )
+        _write_table(
+            ws, 4, COLS_PROVISIONAL,
+            getattr(self.result, "provisional_records", []),
+            highlight_field="excess_quantity",
         )
 
     # ------------------------------------------------------

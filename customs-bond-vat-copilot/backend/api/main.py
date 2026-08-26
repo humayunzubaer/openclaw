@@ -85,6 +85,7 @@ def _run_engine(
     warehouse_capacity_mt: float,
     extension_applies: bool = False,
     register_path: Optional[str] = None,
+    provisional_entitlement_date: Optional[date] = None,
 ):
     """ফাইল লোড করে ImportAnalysisEngine চালায়; (result, dl, meta) ফেরত দেয়"""
     dl = DataLoader(verbose=False)
@@ -120,6 +121,7 @@ def _run_engine(
         bond_license_capacity_mt=bond_license_capacity_mt or 0.0,
         warehouse_capacity_mt=warehouse_capacity_mt or 0.0,
         extension_applies=extension_applies,
+        provisional_entitlement_date=provisional_entitlement_date,
         bonding_capacity_value_bdt=dl.bonding_capacity.get("value_bdt", 0.0),
         bonding_capacity_value_usd=dl.bonding_capacity.get("value_usd", 0.0),
         ledger_events=ledger_events,
@@ -150,6 +152,7 @@ def _result_payload(result, dl) -> dict:
             "unauthorized": [asdict(r) for r in result.unauthorized_records],
             "post_period": [asdict(r) for r in result.post_period_records],
             "rule8": [asdict(r) for r in result.rule8_observations],
+            "provisional": [asdict(r) for r in result.provisional_records],
             "overstay": [asdict(r) for r in result.overstay_records],
             "capacity_breach": [asdict(r) for r in result.capacity_breach_records],
             "capacity_limit": [asdict(r) for r in result.capacity_limit_records],
@@ -177,9 +180,11 @@ async def analyze_import(
     bond_license_capacity_mt: float = Form(0.0),
     warehouse_capacity_mt: float = Form(0.0),
     extension_applies: bool = Form(False),
+    provisional_entitlement_date: Optional[str] = Form(None),
 ):
     """প্রাপ্যতা + আমদানি বিশ্লেষণ করে ফলাফল (JSON) ফেরত দেয়"""
     nxt = _parse_date(next_entitlement_date)
+    prov_dt = _parse_date(provisional_entitlement_date)
     with tempfile.TemporaryDirectory() as tmp:
         ent_path = await _save_upload(entitlement_file, tmp)
         imp_path = await _save_upload(imports_file, tmp)
@@ -189,7 +194,7 @@ async def analyze_import(
             result, dl, _ = _run_engine(
                 ent_path, imp_path, local_path, nxt,
                 bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
-                register_path,
+                register_path, prov_dt,
             )
         except HTTPException:
             raise
@@ -209,9 +214,11 @@ async def analyze_import_xlsx(
     bond_license_capacity_mt: float = Form(0.0),
     warehouse_capacity_mt: float = Form(0.0),
     extension_applies: bool = Form(False),
+    provisional_entitlement_date: Optional[str] = Form(None),
 ):
     """একই বিশ্লেষণ; ১০-শীট Excel কার্যপত্র (.xlsx) ডাউনলোড হিসেবে ফেরত দেয়"""
     nxt = _parse_date(next_entitlement_date)
+    prov_dt = _parse_date(provisional_entitlement_date)
     tmp = tempfile.mkdtemp()
     ent_path = await _save_upload(entitlement_file, tmp)
     imp_path = await _save_upload(imports_file, tmp)
@@ -221,7 +228,7 @@ async def analyze_import_xlsx(
         result, _, meta = _run_engine(
             ent_path, imp_path, local_path, nxt,
             bond_license_capacity_mt, warehouse_capacity_mt, extension_applies,
-            register_path,
+            register_path, prov_dt,
         )
         out = Path(tmp) / "audit_workpaper.xlsx"
         write_report(result, out, meta)

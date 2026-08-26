@@ -409,9 +409,149 @@ BANK_GUARANTEE_NOTE = (
 )
 
 
+# ==========================================================
+# ★ বিয়োজনের শর্তে আমদানি প্রাপ্যতা (Provisional entitlement)
+# ==========================================================
+#
+# নিরীক্ষা চলাকালে প্রতিষ্ঠান **আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা** হইতে বিয়োজনের
+# শর্তে সাময়িক আমদানি প্রাপ্যতা গ্রহণ করিতে পারে। উক্ত সাময়িক প্রাপ্যতা আগামী
+# মেয়াদের সম্ভাব্য প্রাপ্যতার —
+#
+#     • ০১.০৭.২০২৬ এর পূর্বে  : এক-তৃতীয়াংশ (÷ ৩) এর অধিক হইবে না
+#     • ০১.০৭.২০২৬ ও তৎপরবর্তী : এক-চতুর্থাংশ (÷ ৪) এর অধিক হইবে না
+#
+# সীমা লঙ্ঘিত হইলে অতিরিক্ত অংশ বৈধ প্রাপ্যতা নহে — উহার বিপরীতে আমদানিকৃত
+# কাঁচামাল **প্রাপ্যতার অতিরিক্ত আমদানি** হিসাবে শুল্কায়নযোগ্য এবং মতামত ও
+# প্রস্তাবনায় দাবিনামা জারির প্রস্তাব করিতে হইবে।
+
+PROVISIONAL_OLD_DIVISOR = 3.0   # ০১.০৭.২০২৬ এর পূর্বে — এক-তৃতীয়াংশ
+PROVISIONAL_NEW_DIVISOR = 4.0   # ০১.০৭.২০২৬ ও তৎপরবর্তী — এক-চতুর্থাংশ
+
+PROVISIONAL_LEGAL_BASIS = (
+    "বার্ষিক আমদানি-প্রাপ্যতা নির্ধারণ বিধিমালা, ২০২৪ [এসআরও ২১৪-আইন/২০২৪] — "
+    "নিরীক্ষাধীন অবস্থায় আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা হইতে বিয়োজনের শর্তে "
+    "গৃহীত সাময়িক আমদানি প্রাপ্যতার ঊর্ধ্বসীমা "
+    "(০১.০৭.২০২৬ এর পূর্বে এক-তৃতীয়াংশ; উক্ত তারিখ ও তৎপরবর্তী এক-চতুর্থাংশ)"
+)
+
+PROVISIONAL_DEMAND_PROPOSAL = (
+    "বিয়োজনের শর্তে গৃহীত সাময়িক আমদানি প্রাপ্যতা নির্ধারিত ঊর্ধ্বসীমা অতিক্রম "
+    "করিয়াছে। সীমাতিরিক্ত অংশ বৈধ প্রাপ্যতা নহে বিধায় উহার বিপরীতে আমদানিকৃত "
+    "কাঁচামালের উপর প্রাপ্যতার অতিরিক্ত আমদানি হিসাবে শুল্ক-কর আরোপপূর্বক "
+    "কাস্টমস আইন, ২০২৩ এর ধারা ২৩৮ অনুযায়ী দাবিনামা জারির প্রস্তাব করা হইল।"
+)
+
+
+@dataclass
+class ProvisionalEntitlementCheck:
+    """বিয়োজনের শর্তে গৃহীত সাময়িক প্রাপ্যতার সীমা যাচাই"""
+    next_period_probable: float      # আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা
+    provisional_taken: float         # বিয়োজনের শর্তে গৃহীত পরিমাণ
+    divisor: float                   # ৩ (পুরাতন) বা ৪ (নূতন)
+    allowed_cap: float               # সম্ভাব্য প্রাপ্যতা ÷ divisor
+    excess_quantity: float           # সীমার অতিরিক্ত (০ হইলে লঙ্ঘন নাই)
+    excess_pct: float
+    regime: str                      # CapacityRegime.OLD | NEW
+    reference_date: Optional[date]
+    unit: str
+    violated: bool
+    legal_basis: str
+    explanation: str
+    demand_proposal: str
+
+
+def resolve_provisional_divisor(
+    reference_date: Optional[date],
+) -> tuple[float, str, str]:
+    """
+    বিয়োজনের শর্তে প্রাপ্যতার ভাজক নির্ণয় — তারিখভিত্তিক দুইটি সূত্র।
+
+    reference_date : সাময়িক প্রাপ্যতা গ্রহণ/অনুমোদনের তারিখ।
+    ফেরত: (divisor, regime, ব্যাখ্যা)
+    """
+    if reference_date and reference_date >= NEW_REGIME_DATE:
+        return PROVISIONAL_NEW_DIVISOR, CapacityRegime.NEW, (
+            f"সাময়িক প্রাপ্যতার তারিখ {reference_date.strftime('%d.%m.%Y')} — "
+            f"{NEW_REGIME_DATE.strftime('%d.%m.%Y')} বা তৎপরবর্তী হওয়ায় নূতন সূত্র "
+            f"প্রযোজ্য (আগামী মেয়াদের সম্ভাব্য প্রাপ্যতার এক-চতুর্থাংশ)।"
+        )
+
+    if reference_date:
+        return PROVISIONAL_OLD_DIVISOR, CapacityRegime.OLD, (
+            f"সাময়িক প্রাপ্যতার তারিখ {reference_date.strftime('%d.%m.%Y')} — "
+            f"{NEW_REGIME_DATE.strftime('%d.%m.%Y')} এর পূর্বে হওয়ায় পুরাতন সূত্র "
+            f"প্রযোজ্য (আগামী মেয়াদের সম্ভাব্য প্রাপ্যতার এক-তৃতীয়াংশ)।"
+        )
+
+    return PROVISIONAL_OLD_DIVISOR, CapacityRegime.OLD, (
+        "⚠ সাময়িক প্রাপ্যতা গ্রহণের তারিখ শনাক্ত হয় নাই — সতর্কতার সহিত পুরাতন "
+        "সূত্র (এক-তৃতীয়াংশ) প্রয়োগ করা হইল; নিরীক্ষক কর্তৃক তারিখ যাচাই আবশ্যক।"
+    )
+
+
+def check_provisional_entitlement(
+    next_period_probable: float,
+    provisional_taken: float,
+    reference_date: Optional[date] = None,
+    unit: str = "",
+) -> ProvisionalEntitlementCheck:
+    """
+    ★ বিয়োজনের শর্তে গৃহীত সাময়িক আমদানি প্রাপ্যতা নির্ধারিত সীমার মধ্যে কি না।
+
+    সীমা = আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা ÷ (৩ বা ৪ — তারিখভিত্তিক)।
+    """
+    probable = max(0.0, next_period_probable or 0.0)
+    taken = max(0.0, provisional_taken or 0.0)
+    divisor, regime, why = resolve_provisional_divisor(reference_date)
+
+    cap = probable / divisor if probable > 0 else 0.0
+    excess = max(0.0, taken - cap)
+    violated = excess > 0 and probable > 0
+    excess_pct = (excess / cap * 100) if cap > 0 else 0.0
+
+    frac = "এক-চতুর্থাংশ" if divisor == PROVISIONAL_NEW_DIVISOR else "এক-তৃতীয়াংশ"
+    if probable <= 0:
+        explanation = (
+            "আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা প্রদত্ত হয় নাই — সীমা নির্ণয় সম্ভব "
+            "নহে। নিরীক্ষক সম্ভাব্য প্রাপ্যতার ছক তলব করিয়া যাচাই করিবেন।"
+        )
+    elif violated:
+        explanation = (
+            f"{why} সম্ভাব্য প্রাপ্যতা {probable:,.3f} {unit} এর {frac} = "
+            f"{cap:,.3f} {unit} সর্বোচ্চ গ্রহণযোগ্য; প্রতিষ্ঠান গ্রহণ করিয়াছে "
+            f"{taken:,.3f} {unit} — সীমার অতিরিক্ত {excess:,.3f} {unit} "
+            f"({excess_pct:.1f}%)।"
+        )
+    else:
+        explanation = (
+            f"{why} সম্ভাব্য প্রাপ্যতা {probable:,.3f} {unit} এর {frac} = "
+            f"{cap:,.3f} {unit}; গৃহীত {taken:,.3f} {unit} — সীমার মধ্যে।"
+        )
+
+    return ProvisionalEntitlementCheck(
+        next_period_probable=round(probable, 3),
+        provisional_taken=round(taken, 3),
+        divisor=divisor,
+        allowed_cap=round(cap, 3),
+        excess_quantity=round(excess, 3),
+        excess_pct=round(excess_pct, 2),
+        regime=regime,
+        reference_date=reference_date,
+        unit=unit,
+        violated=violated,
+        legal_basis=PROVISIONAL_LEGAL_BASIS,
+        explanation=explanation,
+        demand_proposal=PROVISIONAL_DEMAND_PROPOSAL if violated else "",
+    )
+
+
 __all__ = [
     "NEW_REGIME_DATE", "OLD_REGIME_DIVISOR", "CapacityRegime",
     "PeriodSegment", "split_audit_period",
     "CapacityResolution", "determine_regime", "resolve_capacity",
     "CapacityLimitCheck", "check_capacity_limit", "BANK_GUARANTEE_NOTE",
+    "PROVISIONAL_OLD_DIVISOR", "PROVISIONAL_NEW_DIVISOR",
+    "PROVISIONAL_LEGAL_BASIS", "PROVISIONAL_DEMAND_PROPOSAL",
+    "ProvisionalEntitlementCheck", "resolve_provisional_divisor",
+    "check_provisional_entitlement",
 ]

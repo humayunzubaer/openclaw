@@ -44,6 +44,7 @@ from services.bonding_rules import (
     resolve_capacity, check_capacity_limit, determine_regime,
     split_audit_period, PeriodSegment, NEW_REGIME_DATE,
     CapacityRegime, BANK_GUARANTEE_NOTE,
+    check_provisional_entitlement, PROVISIONAL_NEW_DIVISOR,
 )
 from utils.logger import logger
 
@@ -106,6 +107,15 @@ class EntitlementRow:
     #   পৃথক দেওয়া থাকিলে মোট অনুমোদিত = entitled_quantity + extended_entitlement।
     extended_entitlement: float = 0.0
 
+    # ★ আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা — বিয়োজনের শর্তে গৃহীত সাময়িক
+    #   প্রাপ্যতার ঊর্ধ্বসীমা নির্ণয়ে ব্যবহৃত (সীমা = সম্ভাব্য প্রাপ্যতা ÷ ৩ বা ৪)।
+    next_period_probable: float = 0.0
+
+    # ★ ইঞ্জিন-নির্ণীত বৈধ সাময়িক প্রাপ্যতার সীমা। None হইলে সীমা প্রযোজ্য নহে;
+    #   মান থাকিলে উহার অতিরিক্ত অংশ বৈধ প্রাপ্যতা হিসাবে গণ্য হইবে না —
+    #   ফলে সীমাতিরিক্ত অংশের বিপরীতে আমদানি দাবি ২-এ শুল্কায়িত হয়।
+    allowed_extended_entitlement: Optional[float] = None
+
     period_from: Optional[date] = None
     period_to: Optional[date] = None
     period_label: str = ""
@@ -147,8 +157,17 @@ class EntitlementRow:
 
     @property
     def effective_entitled_quantity(self) -> float:
-        """মোট অনুমোদিত প্রাপ্যতা = মূল + বর্ধিত [বিধি ৮] (অতিরিক্ত হিসাবের সীমা)"""
-        return (self.entitled_quantity or 0.0) + (self.extended_entitlement or 0.0)
+        """
+        মোট অনুমোদিত প্রাপ্যতা = মূল + বৈধ বর্ধিত/সাময়িক প্রাপ্যতা।
+
+        বিয়োজনের শর্তে গৃহীত সাময়িক প্রাপ্যতা নির্ধারিত সীমা (সম্ভাব্য প্রাপ্যতা
+        ÷ ৩ বা ৪) অতিক্রম করিলে সীমাতিরিক্ত অংশ প্রাপ্যতা হিসাবে গণ্য হয় না —
+        উহার বিপরীতে আমদানি দাবি ২ (প্রাপ্যতার অতিরিক্ত) হিসাবে শুল্কায়িত হয়।
+        """
+        ext = self.extended_entitlement or 0.0
+        if self.allowed_extended_entitlement is not None:
+            ext = min(ext, max(0.0, self.allowed_extended_entitlement))
+        return (self.entitled_quantity or 0.0) + ext
 
     @property
     def all_hs_codes(self) -> list[str]:
@@ -641,6 +660,36 @@ class Rule8Observation:
 
 
 @dataclass
+class ProvisionalEntitlementRecord:
+    """
+    ★ বিয়োজনের শর্তে গৃহীত সাময়িক আমদানি প্রাপ্যতার সীমা যাচাই।
+
+    নিরীক্ষা চলাকালে প্রতিষ্ঠান আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা হইতে বিয়োজনের
+    শর্তে সাময়িক প্রাপ্যতা গ্রহণ করে। উক্ত পরিমাণ সম্ভাব্য প্রাপ্যতার
+    এক-তৃতীয়াংশ (০১.০৭.২০২৬ এর পূর্বে) বা এক-চতুর্থাংশ (উক্ত তারিখ ও
+    তৎপরবর্তী) অতিক্রম করিতে পারিবে না।
+
+    সীমা লঙ্ঘিত হইলে সীমাতিরিক্ত অংশ বৈধ প্রাপ্যতা নহে — উহা মোট অনুমোদিত
+    প্রাপ্যতা হইতে বাদ যায়, ফলে ঐ অংশের বিপরীতে আমদানি **দাবি ২ (প্রাপ্যতার
+    অতিরিক্ত আমদানি)** হিসাবে শুল্কায়িত হয় (পৃথক দাবি নহে — দ্বৈত গণনা রোধ)।
+    """
+    serial: int
+    entitlement_item: str
+    unit: str
+    next_period_probable: float      # আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা
+    divisor_label: str               # "এক-তৃতীয়াংশ (÷ ৩)" | "এক-চতুর্থাংশ (÷ ৪)"
+    allowed_cap: float               # সর্বোচ্চ গ্রহণযোগ্য সাময়িক প্রাপ্যতা
+    provisional_taken: float         # প্রতিষ্ঠান কর্তৃক গৃহীত
+    excess_quantity: float           # সীমার অতিরিক্ত
+    excess_pct: float
+    status: str                      # সীমার মধ্যে | সীমা অতিক্রম
+    reference_date: str
+    legal_basis: str
+    explanation: str
+    demand_proposal: str
+
+
+@dataclass
 class OverstayRecord:
     """
     ★ দাবি ৬ — মেয়াদোত্তীর্ণ (নির্ধারিত মেয়াদের বেশি) বন্ডে থাকা কাঁচামাল।
@@ -677,6 +726,9 @@ class ImportAnalysisResult:
     unauthorized_records: list[UnauthorizedRecord] = field(default_factory=list)
     post_period_records: list[PostPeriodRecord] = field(default_factory=list)
     rule8_observations: list[Rule8Observation] = field(default_factory=list)
+    provisional_records: list[ProvisionalEntitlementRecord] = field(
+        default_factory=list
+    )
     overstay_records: list[OverstayRecord] = field(default_factory=list)
     machinery_records: list[MachineryRecord] = field(default_factory=list)
     bonding_records: list[BondingCapacityRecord] = field(default_factory=list)
@@ -727,6 +779,9 @@ class ImportAnalysisResult:
             ),
             "বিধি ৮ বর্ধিত প্রাপ্যতা": pd.DataFrame(
                 [asdict(r) for r in self.rule8_observations]
+            ),
+            "বিয়োজনের শর্তে প্রাপ্যতা": pd.DataFrame(
+                [asdict(r) for r in self.provisional_records]
             ),
             "মেয়াদোত্তীর্ণ (দাবি ৬)": pd.DataFrame(
                 [asdict(r) for r in self.overstay_records]
@@ -782,6 +837,7 @@ class ImportAnalysisEngine:
         next_entitlement_date: date | None = None,
         bond_license_capacity_mt: float = 0.0,
         extension_applies: bool = False,
+        provisional_entitlement_date: date | None = None,
         overstay_years: float = 2.0,
         overstay_as_of: date | None = None,
     ):
@@ -808,6 +864,10 @@ class ImportAnalysisEngine:
         # ★ বিধি ৮ — নিরীক্ষায় প্রাপ্যতার মেয়াদ বৃদ্ধি প্রযোজ্য কিনা (নিরীক্ষক flag)।
         #   True হইলে সর্বদা বিয়োজন-যাচাই পর্যবেক্ষণ দেওয়া হয়।
         self.extension_applies = extension_applies
+        # ★ বিয়োজনের শর্তে সাময়িক প্রাপ্যতা গ্রহণ/অনুমোদনের তারিখ —
+        #   ভাজক (÷৩ বনাম ÷৪) নির্ণয়ে ব্যবহৃত। None হইলে next_entitlement_date,
+        #   তাহাও না থাকিলে মেয়াদ-সমাপ্তি ধরা হয় (সতর্কতাসহ)।
+        self.provisional_entitlement_date = provisional_entitlement_date
         # ★ দাবি ৬ (overstay) — মেয়াদ সীমা (বছর, working default ২.০) ও রেফারেন্স তারিখ।
         self.overstay_years = overstay_years or 2.0
         self.overstay_as_of = overstay_as_of
@@ -962,6 +1022,11 @@ class ImportAnalysisEngine:
                     "উৎস": "স্থানীয় ক্রয়",
                     "ব্যাখ্যা": m.explanation,
                 })
+
+        # ধাপ ২.৯: ★ বিয়োজনের শর্তে সাময়িক প্রাপ্যতার সীমা যাচাই।
+        #   অতিরিক্ত-আমদানি গণনার পূর্বে চালাইতে হইবে — সীমাতিরিক্ত সাময়িক
+        #   প্রাপ্যতা যেন আমদানির ঢাল হিসাবে কাজ না করে।
+        self._build_provisional_entitlement(result)
 
         # ধাপ ৩: অতিরিক্ত আমদানি ও প্রাপ্যতা ব্যবহার
         self._build_excess_and_utilization(matched_groups, result)
@@ -1492,6 +1557,97 @@ class ImportAnalysisEngine:
         "সময় ঐ পরিমাণ বিয়োজন হইয়াছে কিনা নিশ্চিত করিবেন — বিয়োজন না হইলে "
         "পর্যবেক্ষণ হিসাবে লিপিবদ্ধ করিবেন।"
     )
+
+    def _build_provisional_entitlement(self, result: ImportAnalysisResult):
+        """
+        ★ বিয়োজনের শর্তে গৃহীত সাময়িক আমদানি প্রাপ্যতার ঊর্ধ্বসীমা যাচাই।
+
+        সীমা = আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা ÷ ৩ (০১.০৭.২০২৬ এর পূর্বে) বা
+        ÷ ৪ (উক্ত তারিখ ও তৎপরবর্তী)। সীমাতিরিক্ত অংশ বৈধ প্রাপ্যতা নহে —
+        `allowed_extended_entitlement` বসাইয়া উহাকে মোট অনুমোদিত প্রাপ্যতা হইতে
+        বাদ দেওয়া হয়, ফলে ঐ অংশের বিপরীতে আমদানি দাবি ২-এ শুল্কায়িত হয়।
+        """
+        rows = [e for e in self.entitlements if (e.next_period_probable or 0) > 0]
+        if not rows:
+            if any((e.extended_entitlement or 0) > 0 for e in self.entitlements):
+                result.warnings.append(
+                    "বিয়োজনের শর্তে প্রাপ্যতা: বর্ধিত/সাময়িক প্রাপ্যতা প্রদত্ত "
+                    "থাকিলেও আগামী মেয়াদের সম্ভাব্য প্রাপ্যতা দেওয়া হয় নাই — "
+                    "ঊর্ধ্বসীমা (÷৩ বা ÷৪) যাচাই করা যায় নাই। নিরীক্ষক সম্ভাব্য "
+                    "প্রাপ্যতার ছক তলব করিয়া যাচাই করিবেন।"
+                )
+            return
+
+        ref_date = (
+            self.provisional_entitlement_date
+            or self.next_entitlement_date
+            or self._audit_period_end()
+        )
+        if not self.provisional_entitlement_date:
+            result.warnings.append(
+                "বিয়োজনের শর্তে প্রাপ্যতা: সাময়িক প্রাপ্যতা গ্রহণের তারিখ পৃথকভাবে "
+                f"দেওয়া হয় নাই — {ref_date.strftime('%d.%m.%Y') if ref_date else 'অজ্ঞাত'} "
+                "ধরিয়া ভাজক নির্ণয় করা হইল; নিরীক্ষক তারিখ যাচাই করিবেন "
+                "(০১.০৭.২০২৬ হইতে সীমা এক-চতুর্থাংশ)।"
+            )
+
+        violations = 0
+        for i, e in enumerate(rows, start=1):
+            chk = check_provisional_entitlement(
+                next_period_probable=e.next_period_probable,
+                provisional_taken=e.extended_entitlement or 0.0,
+                reference_date=ref_date,
+                unit=e.unit,
+            )
+            # ★ সীমাতিরিক্ত অংশ আর প্রাপ্যতার ঢাল নহে
+            e.allowed_extended_entitlement = chk.allowed_cap
+
+            frac = ("এক-চতুর্থাংশ (÷ ৪)"
+                    if chk.divisor == PROVISIONAL_NEW_DIVISOR
+                    else "এক-তৃতীয়াংশ (÷ ৩)")
+            if (e.extended_entitlement or 0) <= 0:
+                status = "যাচাই অসম্পূর্ণ — গৃহীত পরিমাণ প্রদত্ত নহে"
+                explanation = (
+                    f"{chk.explanation} তবে এই এককে বিয়োজনের শর্তে গৃহীত সাময়িক "
+                    "প্রাপ্যতার পরিমাণ পৃথকভাবে দেওয়া হয় নাই — নিরীক্ষক প্রতিষ্ঠানের "
+                    "নিকট হইতে উহা তলব করিয়া সীমার সহিত মিলাইবেন।"
+                )
+            elif chk.violated:
+                status = "সীমা অতিক্রম"
+                explanation = chk.explanation
+                violations += 1
+            else:
+                status = "সীমার মধ্যে"
+                explanation = chk.explanation
+
+            result.provisional_records.append(ProvisionalEntitlementRecord(
+                serial=i,
+                entitlement_item=e.display_name,
+                unit=e.unit,
+                next_period_probable=chk.next_period_probable,
+                divisor_label=frac,
+                allowed_cap=chk.allowed_cap,
+                provisional_taken=chk.provisional_taken,
+                excess_quantity=chk.excess_quantity,
+                excess_pct=chk.excess_pct,
+                status=status,
+                reference_date=ref_date.strftime("%d.%m.%Y") if ref_date else "",
+                legal_basis=chk.legal_basis,
+                explanation=explanation,
+                demand_proposal=chk.demand_proposal,
+            ))
+
+        if violations:
+            result.warnings.append(
+                f"⛔ বিয়োজনের শর্তে প্রাপ্যতা: {violations}টি এককে নির্ধারিত ঊর্ধ্বসীমা "
+                "অতিক্রান্ত। সীমাতিরিক্ত অংশ প্রাপ্যতা হইতে বাদ দেওয়া হইয়াছে — উহার "
+                "বিপরীতে আমদানি দাবি ২ (প্রাপ্যতার অতিরিক্ত) হিসাবে শুল্কায়িত হইবে; "
+                "মতামত ও প্রস্তাবনায় দাবিনামা জারির প্রস্তাব করিতে হইবে।"
+            )
+        logger.info(
+            f"বিয়োজনের শর্তে প্রাপ্যতা যাচাই — {len(result.provisional_records)}টি একক, "
+            f"{violations}টি সীমা অতিক্রম"
+        )
 
     def _build_rule8_observations(self, result: ImportAnalysisResult):
         """
@@ -2224,6 +2380,10 @@ class ImportAnalysisEngine:
             ),
             "মেয়াদোত্তীর্ণ (overstay) রেকর্ড সংখ্যা": len(result.overstay_records),
             "বিধি ৮ বর্ধিত-প্রাপ্যতা পর্যবেক্ষণ (দাবি নহে)": len(result.rule8_observations),
+            "বিয়োজনের শর্তে প্রাপ্যতা — যাচাইকৃত একক": len(result.provisional_records),
+            "বিয়োজনের শর্তে প্রাপ্যতা — সীমা অতিক্রম": sum(
+                1 for r in result.provisional_records if r.status == "সীমা অতিক্রম"
+            ),
             "সর্বমোট রাজস্ব দাবি (BDT)": round(
                 sum(r.total_revenue_impact for r in un)
                 + sum(r.total_revenue_impact for r in ex)
