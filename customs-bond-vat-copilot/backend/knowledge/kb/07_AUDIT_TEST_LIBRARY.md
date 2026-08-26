@@ -30,7 +30,7 @@
 
 ## T-04: Coefficient/UP-UD Utilization
 **সূত্র:** `প্রাপ্য-input = Σ(রপ্তানি-qty × coefficient)`; `Over-drawal = প্রকৃত-খালাস − প্রাপ্য`; মেয়াদ-চেক: খালাস-তারিখ ∈ UP/UD/DEDO-বৈধতা-সীমা।
-**Findings:** মেয়াদোত্তীর্ণ সহগে খালাস (M&M DEDO-ধাঁচ); over-drawal-kg-এর duty-exposure।
+**Findings:** মেয়াদোত্তীর্ণ সহগে খালাস (DEDO পূর্ব-দৃষ্টান্ত); over-drawal-kg-এর duty-exposure।
 **আইন:** UP/UD-শর্ত + ধারা ১২(৪)(ক) 【V】 + ১২৬ 【V】।
 
 ## T-05: Wastage Test

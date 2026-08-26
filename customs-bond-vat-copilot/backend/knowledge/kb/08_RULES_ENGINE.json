@@ -129,7 +129,7 @@
           "certainty": "V/E"
         }
       ],
-      "precedent": "M&M expired-DEDO clearance",
+      "precedent": "expired-DEDO clearance precedent",
       "severity": "high"
     },
     {
