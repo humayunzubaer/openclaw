@@ -154,7 +154,7 @@
           "certainty": "V"
         }
       ],
-      "precedent": "RGL 3.34% across 287 SB x 27 RM, demand ~BDT 3.75 crore",
+      "precedent": "নজির-ক 3.34% across 287 SB x 27 RM, demand ~BDT 3.75 crore",
       "severity": "high"
     },
     {
@@ -166,11 +166,11 @@
         "min_va_pct"
       ],
       "formula": "va_pct = (export_fob - imported_input_value)/imported_input_value*100",
-      "anti_pattern_detector": "authoritative base = imported input value (auditor-set, Gold Shine 23.45%); if base=export_fob is used VA is understated — engine computes both and flags the discrepancy",
+      "anti_pattern_detector": "authoritative base = imported input value (auditor-set, Case-B 23.45%); if base=export_fob is used VA is understated — engine computes both and flags the discrepancy",
       "threshold": {
         "min_va_percent": 15
       },
-      "precedent": "Fujian 11.40% vs 15%, risk > BDT 1.57 crore",
+      "precedent": "Case-C 11.40% vs 15%, risk > BDT 1.57 crore",
       "severity": "high",
       "law_ref": "SRO ২১২-আইন/২০২৪/৬৪ বিধি ১০(৮) — VA হার ইউপিতে উল্লেখ বাধ্যতামূলক, ≥১৫%; গণনা-স্থান: তফসিল-২ ক্রমিক ১৪(ঘ)",
       "certainty": "V"
@@ -185,7 +185,7 @@
         "master_lc_values"
       ],
       "formula": "set differences; entitlement: sum(btb) <= master_limit_pct [E]",
-      "precedent": "RGL 107 LCs absent from bond register",
+      "precedent": "নজির-ক 107 LCs absent from bond register",
       "severity": "high"
     },
     {
@@ -221,7 +221,7 @@
         "certainty": "V"
       },
       "calc_order_certainty": "E (ASYCUDA convention); rates always from Operative Tariff, never assumed",
-      "precedent": "RGL negative plates 3,510,000 pcs HS 8507.90.90 ~BDT 5.47 crore",
+      "precedent": "নজির-ক negative plates 3,510,000 pcs HS 8507.90.90 ~BDT 5.47 crore",
       "severity": "high"
     },
     {
@@ -238,7 +238,7 @@
           "certainty": "V/P"
         }
       ],
-      "precedent": "RGL 8 B/Es AV ~BDT 2.12 crore",
+      "precedent": "নজির-ক 8 B/Es AV ~BDT 2.12 crore",
       "severity": "medium"
     },
     {

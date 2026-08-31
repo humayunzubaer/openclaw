@@ -32,8 +32,8 @@ def _period():
 
 
 def case_extended():
-    # Gold Shine pattern: base 894.269 + extended 516.816 = 1411.085; import 1552.376
-    print("CASE 1 — extended entitlement (combined ceiling, Gold Shine)")
+    # Case-B pattern: base 894.269 + extended 516.816 = 1411.085; import 1552.376
+    print("CASE 1 — extended entitlement (combined ceiling, Case-B)")
     ent = [EntitlementRow(row_id=1, serial_no="1", hs_code="3915.90.00",
                           item_name="MIXED PLASTIC SCRAP", entitled_quantity=894.269,
                           extended_entitlement=516.816, unit="MT", **_period())]
