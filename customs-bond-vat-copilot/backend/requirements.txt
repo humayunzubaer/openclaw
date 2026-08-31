@@ -1,0 +1,60 @@
+# ====================================================
+# Customs Bond Audit Intelligence Platform
+# Python Dependencies
+# ====================================================
+
+# --- Core Framework ---
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.6.0
+pydantic-settings==2.2.0
+python-multipart==0.0.9
+aiofiles==23.2.1
+
+# --- Database ---
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# --- Security ---
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+cryptography==42.0.2
+
+# --- Excel Processing ---
+openpyxl==3.1.2
+pandas==2.2.0
+numpy==1.26.4
+xlrd==2.0.1
+xlutils==2.0.0
+
+# --- PDF / OCR ---
+pytesseract==0.3.10
+Pillow==10.2.0
+pdf2image==1.17.0
+pdfplumber==0.10.4
+easyocr==1.7.1
+# paddlepaddle; paddleocr==2.7.3   # Heavy — install separately if needed
+
+# --- AI / ML ---
+sentence-transformers==2.3.1
+faiss-cpu==1.7.4
+scikit-learn==1.4.0
+rapidfuzz==3.6.1
+duckdb==0.10.0
+
+# --- Ollama Client ---
+httpx==0.26.0
+
+# --- Utilities ---
+python-dotenv==1.0.1
+loguru==0.7.2
+orjson==3.9.12
+python-dateutil==2.8.2
+chardet==5.2.0
+tabulate==0.9.0
+
+# --- Report Generation ---
+reportlab==4.1.0
+python-docx==1.1.0
+openpyxl==3.1.2
+matplotlib==3.8.2
