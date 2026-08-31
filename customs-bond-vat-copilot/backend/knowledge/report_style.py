@@ -746,6 +746,231 @@ OPINION_CLOSING = "সদয় অনুমোদনের জন্য নথ�
 
 
 # ==========================================================
+# ★★ প্রাসঙ্গিকতা-ফিল্টার — প্রতিবেদনে কেবল প্রযোজ্য অংশ
+# ==========================================================
+#
+# নিরীক্ষকের নির্দেশ: "নিরীক্ষার ধরন অনুযায়ী যেসব ফাইন্ডিং আসবে বা
+# প্রাসঙ্গিক হবে, প্রতিবেদনে কেবল সেই অংশটুকুই আসবে; বাকিগুলো ইঞ্জিন
+# দেখাবে না।"
+#
+# দুই স্তরে ছাঁকা হয় —
+#   স্তর ১ (ধরন) : প্রতিষ্ঠানের শ্রেণি ও নিরীক্ষার পরিধি অনুযায়ী কোন
+#                  অনুচ্ছেদ/প্রশ্ন/ছাঁচ আদৌ প্রযোজ্য
+#   স্তর ২ (ফল)  : বিশ্লেষণে প্রকৃতপক্ষে যে ফাইন্ডিং পাওয়া গিয়াছে কেবল
+#                  তাহাই প্রতিবেদনে যাইবে (শূন্য ফলাফল = অনুপস্থিত)
+
+SCOPE_ALL = "all"              # সর্বত্র প্রযোজ্য
+SCOPE_UP = "up"                # ইউপি-ভিত্তিক (ইপিজেড ও পোশাক শিল্পে নহে)
+SCOPE_DIRECT = "direct"        # কেবল সরাসরি রপ্তানিকারক
+SCOPE_DEEMED = "deemed"        # কেবল প্রচ্ছন্ন রপ্তানিকারক
+SCOPE_EXPORT_DATA = "export"   # রপ্তানি তথ্য প্রয়োজন
+SCOPE_REGISTER = "register"    # বন্ড রেজিস্টার প্রয়োজন
+SCOPE_VAT = "vat"              # সিএ/ভ্যাট পার্শ্ব নিরীক্ষায় অন্তর্ভুক্ত হইলে
+
+
+@dataclass
+class AuditProfile:
+    """নিরীক্ষার ধরন — কোন অংশ প্রতিবেদনে আসিবে তাহা ইহাই নির্ধারণ করে"""
+    is_epz: bool = False
+    is_deemed: bool = False
+    is_rmg: bool = False
+    includes_vat: bool = False      # সিএ/ভ্যাট পার্শ্বও নিরীক্ষিত হইতেছে?
+    has_register: bool = False      # বন্ড রেজিস্টার (তফসিল-১) পাওয়া গিয়াছে?
+    has_export_data: bool = False   # রপ্তানি/এমআইএস তথ্য পাওয়া গিয়াছে?
+
+    @property
+    def uses_up(self) -> bool:
+        """ইউপি-ভিত্তিক পরিচালনা? ইপিজেডে আইপি/ইপি, পোশাকে ইউডি।"""
+        return not (self.is_epz or self.is_rmg)
+
+
+def scope_applies(scope: str, p: AuditProfile) -> bool:
+    """একটি প্রযোজ্যতা-ট্যাগ এই নিরীক্ষায় খাটে কি না"""
+    if scope == SCOPE_ALL:
+        return True
+    if scope == SCOPE_UP:
+        return p.uses_up
+    if scope == SCOPE_DIRECT:
+        return not p.is_deemed
+    if scope == SCOPE_DEEMED:
+        return p.is_deemed
+    if scope == SCOPE_EXPORT_DATA:
+        return p.has_export_data
+    if scope == SCOPE_REGISTER:
+        return p.has_register
+    if scope == SCOPE_VAT:
+        return p.includes_vat
+    return True
+
+
+# ---- ছাঁচ-ভিত্তিক প্রযোজ্যতা (উল্লেখ না থাকিলে সর্বত্র প্রযোজ্য) ----
+TEMPLATE_SCOPE: dict[str, tuple[str, ...]] = {
+    # ইউপি-নির্ভর
+    "up_arithmetic": (SCOPE_UP,),
+    "btb_lc_limit_exceeded": (SCOPE_UP,),
+    "up_application_late": (SCOPE_UP,),
+    "up_value_addition_missing": (SCOPE_UP,),
+    "exbond_without_up": (SCOPE_UP,),
+    "value_addition_short": (SCOPE_UP, SCOPE_EXPORT_DATA),
+    "export_without_up": (SCOPE_UP, SCOPE_EXPORT_DATA),
+    # রেজিস্টার-নির্ভর
+    "into_bond_delay": (SCOPE_REGISTER,),
+    "register_two_copy_mismatch": (SCOPE_REGISTER,),
+    "register_signature_missing": (SCOPE_REGISTER,),
+    "overstay_demand": (SCOPE_REGISTER,),
+    "lc_missing_in_register": (SCOPE_REGISTER,),
+    "unexplained_shortage": (SCOPE_REGISTER,),
+    # রপ্তানি-তথ্য নির্ভর
+    "export_not_made": (SCOPE_EXPORT_DATA,),
+    "repatriation_overdue": (SCOPE_EXPORT_DATA,),
+    "prc_not_submitted": (SCOPE_EXPORT_DATA,),
+    "egm_bex_missing": (SCOPE_EXPORT_DATA, SCOPE_DIRECT),
+    "destination_mismatch": (SCOPE_EXPORT_DATA, SCOPE_DIRECT),
+    "deemed_export_doc_incomplete": (SCOPE_DEEMED,),
+    # সিএ/ভ্যাট পার্শ্ব
+    "vat_return_late": (SCOPE_VAT,),
+    "supply_without_mushak_63": (SCOPE_VAT,),
+    "vds_not_deducted": (SCOPE_VAT,),
+    "vds_not_deposited": (SCOPE_VAT,),
+    "mushak_66_late": (SCOPE_VAT,),
+    "input_credit_ineligible": (SCOPE_VAT,),
+    "records_not_maintained": (SCOPE_VAT,),
+    "mushak_43_missing": (SCOPE_VAT,),
+    "mushak_43_mismatch": (SCOPE_VAT,),
+    "frozen_note_anomaly": (SCOPE_VAT,),
+    "zero_rated_doc_incomplete": (SCOPE_VAT,),
+    "turnover_mismatch_fs": (SCOPE_VAT,),
+    "turnover_mismatch_income_tax": (SCOPE_VAT,),
+    "bank_sales_mismatch": (SCOPE_VAT,),
+    "sd_not_paid": (SCOPE_VAT,),
+    "at_adjustment_mismatch": (SCOPE_VAT,),
+    "ca_certificate_discrepancy": (SCOPE_VAT,),
+}
+
+
+def template_applies(kind: str, p: AuditProfile) -> bool:
+    """এই ফাইন্ডিং-ছাঁচ এই নিরীক্ষায় আদৌ প্রযোজ্য কি না"""
+    return all(scope_applies(sc, p) for sc in TEMPLATE_SCOPE.get(kind, (SCOPE_ALL,)))
+
+
+# ---- পর্যালোচনার প্রশ্নের প্রযোজ্যতা (শ্রেণি-ভিত্তিক) ----
+REVIEW_CATEGORY_SCOPE: dict[str, tuple[str, ...]] = {
+    "vat": (SCOPE_VAT,),
+    "export": (SCOPE_EXPORT_DATA,),
+}
+
+
+def select_review_questions(p: AuditProfile) -> list[tuple[str, str, str]]:
+    """
+    এই নিরীক্ষায় প্রযোজ্য পর্যালোচনা-প্রশ্নগুলি ফেরত দেয়।
+
+    বাদ পড়ে — ভ্যাট-প্রশ্ন (সিএ পার্শ্ব না থাকিলে), রপ্তানি-প্রশ্ন
+    (রপ্তানি তথ্য না থাকিলে), এবং ইউপি-নির্ভর প্রশ্ন (ইপিজেড/পোশাকে)।
+    """
+    out: list[tuple[str, str, str]] = []
+    for q, ans, cat in REVIEW_CHECKLIST:
+        scopes = REVIEW_CATEGORY_SCOPE.get(cat, (SCOPE_ALL,))
+        if not all(scope_applies(sc, p) for sc in scopes):
+            continue
+        # ইউপি-নির্ভর প্রশ্ন ইপিজেড/পোশাক শিল্পে প্রযোজ্য নহে
+        if not p.uses_up and ("ইউপি" in q or "ইউটিলাইজেশন পারমিশন" in q):
+            continue
+        if not p.has_register and "রেজিস্টার" in q:
+            continue
+        out.append((q, ans, cat))
+    return out
+
+
+# ---- অনুচ্ছেদ-মানচিত্র ও তাহার প্রযোজ্যতা ----
+REPORT_PARAGRAPHS: list[tuple[str, tuple[str, ...]]] = [
+    ("প্রতিষ্ঠানের পরিচয়, ঠিকানা ও প্রকৃতি", (SCOPE_ALL,)),
+    ("বন্ড লাইসেন্স — নং, ইস্যু ও নবায়ন", (SCOPE_ALL,)),
+    ("মূসক নিবন্ধন ও লিয়েন ব্যাংক", (SCOPE_ALL,)),
+    ("উৎপাদিত পণ্যের বিবরণ ও এইচ.এস কোড", (SCOPE_ALL,)),
+    ("নিরীক্ষা মেয়াদ, কমিটি ও পরিদর্শন", (SCOPE_ALL,)),
+    ("দাখিলকৃত দলিলাদির ছক", (SCOPE_ALL,)),
+    ("অনুমোদিত কাঁচামালের তালিকা ও এইচ.এস কোড", (SCOPE_ALL,)),
+    ("জেনারেল বন্ড", (SCOPE_ALL,)),
+    ("অঙ্গীকারনামা", (SCOPE_ALL,)),
+    ("লে-আউট প্ল্যান ও সরেজমিন মিল", (SCOPE_ALL,)),
+    ("স্থাপিত মেশিনের তালিকা", (SCOPE_ALL,)),
+    ("বার্ষিক উৎপাদন ক্ষমতা ও এককালীন বন্ডিং ক্যাপাসিটি", (SCOPE_ALL,)),
+    ("মোট আমদানির সারসংক্ষেপ", (SCOPE_ALL,)),
+    ("আইটেম-ভিত্তিক আমদানি বনাম প্রাপ্যতা", (SCOPE_ALL,)),
+    ("বিয়োজনের শর্তে গৃহীত সাময়িক প্রাপ্যতা", (SCOPE_ALL,)),
+    ("ছাড়করণ হইতে ইন্টু-বন্ডের সময়", (SCOPE_REGISTER,)),
+    ("স্থানীয় সংগ্রহ ও উৎসে মূসক", (SCOPE_ALL,)),
+    ("ইউটিলাইজেশন পারমিশনের বিবরণ", (SCOPE_UP,)),
+    ("আইপি/ইপি ভিত্তিক আমদানি-রপ্তানি", ("epz_only",)),
+    ("রপ্তানির বিবরণ", (SCOPE_EXPORT_DATA,)),
+    ("ইউপি-বহির্ভূত রপ্তানি", (SCOPE_UP, SCOPE_EXPORT_DATA)),
+    ("প্রচ্ছন্ন রপ্তানি — সরবরাহ ও গ্রহীতার বিবরণ", (SCOPE_DEEMED,)),
+    ("রপ্তানি মূল্য ও প্রত্যাবাসিত মূল্য", (SCOPE_EXPORT_DATA,)),
+    ("পি.আর.সি. ও অপ্রত্যাবাসিত মূল্য", (SCOPE_EXPORT_DATA,)),
+    ("ডিইডিও অনুমোদিত সহগ ও মেয়াদ", (SCOPE_ALL,)),
+    ("সহগ অনুযায়ী তাত্ত্বিক ব্যবহার", (SCOPE_ALL,)),
+    ("প্রারম্ভিক জের, ব্যবহার ও সমাপনী মজুদ", (SCOPE_ALL,)),
+    ("অপচয় (wastage)", (SCOPE_ALL,)),
+    ("বন্ডিং মেয়াদোত্তীর্ণ কাঁচামাল", (SCOPE_REGISTER,)),
+    ("বিদ্যুৎ বিল ও উৎপাদনের সামঞ্জস্য", (SCOPE_ALL,)),
+    ("জনবল ও বেতন", (SCOPE_ALL,)),
+    ("লিয়েন ব্যাংকের প্রত্যয়ন", (SCOPE_ALL,)),
+    ("মূসক দাখিলপত্র ও উৎসে মূসক পর্যালোচনা", (SCOPE_VAT,)),
+    ("নিরীক্ষিত আর্থিক বিবরণীর সহিত সমন্বয়", (SCOPE_VAT,)),
+    ("★ আপত্তি ও শুল্ক-করাদির হিসাব", (SCOPE_ALL,)),
+    ("বার্ষিক আমদানি প্রাপ্যতার প্রস্তাব", (SCOPE_ALL,)),
+    ("★ সার্বিক পর্যালোচনা", (SCOPE_ALL,)),
+    ("★ মতামত ও প্রস্তাবনা", (SCOPE_ALL,)),
+]
+
+
+def select_report_paragraphs(p: AuditProfile) -> list[str]:
+    """এই নিরীক্ষায় প্রতিবেদনে যে অনুচ্ছেদগুলি থাকিবে — ক্রমসহ"""
+    out: list[str] = []
+    for title, scopes in REPORT_PARAGRAPHS:
+        ok = True
+        for sc in scopes:
+            if sc == "epz_only":
+                ok = ok and p.is_epz
+            else:
+                ok = ok and scope_applies(sc, p)
+        if ok:
+            out.append(title)
+    return out
+
+
+def assemble_report_plan(
+    profile: AuditProfile,
+    findings: list[dict] | None = None,
+) -> dict:
+    """
+    ★ প্রতিবেদনের পরিকল্পনা — কেবল প্রাসঙ্গিক অংশ।
+
+    ফেরত দেয় —
+      paragraphs        : যে অনুচ্ছেদগুলি লিখিতে হইবে (ক্রমসহ)
+      review_questions  : পর্যালোচনায় যে প্রশ্নগুলি থাকিবে
+      findings          : প্রযোজ্য ও প্রকৃতপক্ষে প্রাপ্ত ফাইন্ডিং
+      excluded_findings : ধরন-অনুযায়ী প্রযোজ্য নয় বলিয়া বাদ পড়া ফাইন্ডিং
+    """
+    kept, dropped = [], []
+    for f in (findings or []):
+        kind = f.get("kind", "")
+        if kind not in OPINION_TEMPLATES:
+            dropped.append({"kind": kind, "কারণ": "ছাঁচ নাই"})
+        elif not template_applies(kind, profile):
+            dropped.append({"kind": kind, "কারণ": "নিরীক্ষার ধরনে প্রযোজ্য নহে"})
+        else:
+            kept.append(f)
+    return {
+        "paragraphs": select_report_paragraphs(profile),
+        "review_questions": select_review_questions(profile),
+        "findings": kept,
+        "excluded_findings": dropped,
+    }
+
+
+
+# ==========================================================
 # আপত্তির বর্ণনা লিখিবার ছাঁচ (অনুচ্ছেদ)
 # ==========================================================
 
@@ -973,6 +1198,9 @@ def render_opinion(
 __all__ = [
     "to_cholit", "SADHU_TO_CHOLIT",
     "STYLE_RULES", "REPORT_SKELETON", "REVIEW_CHECKLIST",
+    "AuditProfile", "assemble_report_plan", "select_report_paragraphs",
+    "select_review_questions", "template_applies", "TEMPLATE_SCOPE",
+    "REPORT_PARAGRAPHS",
     "OPINION_TEMPLATES", "OPINION_OPENING", "OPINION_CLOSING",
     "FINDING_NARRATIVE", "DEMAND_TABLE_COLUMNS",
     "number_to_bangla_words", "format_taka", "_indian_group",

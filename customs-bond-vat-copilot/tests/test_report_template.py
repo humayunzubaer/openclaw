@@ -21,6 +21,8 @@ from knowledge.report_style import (
     OPINION_TEMPLATES, OPINION_OPENING, OPINION_CLOSING,
     REVIEW_CHECKLIST, REPORT_SKELETON, build_opinion,
     number_to_bangla_words,
+    AuditProfile, assemble_report_plan, template_applies,
+    select_report_paragraphs, select_review_questions,
 )
 
 _all_ok = True
@@ -116,6 +118,82 @@ for p in ROOT.rglob("*"):
             hits.append(f"{p.relative_to(ROOT)}: {b}")
 check("নিরীক্ষাধীন প্রতিষ্ঠানের নাম নাই" + (f" — পাওয়া গেছে: {hits[:3]}" if hits else ""),
       not hits)
+
+print("== ৭. ★ প্রাসঙ্গিকতা-ফিল্টার — কেবল প্রযোজ্য অংশ ==")
+ALL_F = [
+    {"kind": "excess_import_demand", "para": "৩৬"},
+    {"kind": "overstay_demand", "para": "৩৮"},
+    {"kind": "into_bond_delay", "para": "১৯"},
+    {"kind": "up_arithmetic", "para": "১৭"},
+    {"kind": "export_without_up", "para": "২২"},
+    {"kind": "destination_mismatch", "para": "২৩"},
+    {"kind": "deemed_export_doc_incomplete", "para": "২৪"},
+    {"kind": "vds_not_deducted", "para": "২০"},
+    {"kind": "turnover_mismatch_fs", "para": "৩৫"},
+    {"kind": "value_addition_short", "para": "২৬"},
+]
+
+# ধরন ১ — সরাসরি, শুধু বন্ড, রপ্তানি ডেটা নাই
+p1 = AuditProfile(has_register=True)
+pl1 = assemble_report_plan(p1, ALL_F)
+k1 = {f["kind"] for f in pl1["findings"]}
+check("ভ্যাট পার্শ্ব না থাকিলে ভ্যাট-ফাইন্ডিং বাদ",
+      "vds_not_deducted" not in k1 and "turnover_mismatch_fs" not in k1)
+check("রপ্তানি ডেটা না থাকিলে রপ্তানি-ফাইন্ডিং বাদ",
+      "export_without_up" not in k1 and "destination_mismatch" not in k1)
+check("প্রচ্ছন্নের ফাইন্ডিং সরাসরিতে বাদ",
+      "deemed_export_doc_incomplete" not in k1)
+check("রেজিস্টার-ভিত্তিক ফাইন্ডিং থাকে",
+      "into_bond_delay" in k1 and "overstay_demand" in k1)
+check("ভ্যাট-প্রশ্ন পর্যালোচনায় নাই",
+      not any(c == "vat" for _, _, c in pl1["review_questions"]))
+check("বাদ পড়াগুলির কারণ লিপিবদ্ধ",
+      all("কারণ" in d for d in pl1["excluded_findings"]))
+
+# ধরন ২ — সরাসরি + রপ্তানি + সিএ/ভ্যাট
+p2 = AuditProfile(has_register=True, has_export_data=True, includes_vat=True)
+pl2 = assemble_report_plan(p2, ALL_F)
+k2 = {f["kind"] for f in pl2["findings"]}
+check("পূর্ণ পরিধিতে ভ্যাট-ফাইন্ডিং আসে", "vds_not_deducted" in k2)
+check("পূর্ণ পরিধিতে রপ্তানি-ফাইন্ডিং আসে", "export_without_up" in k2)
+check("পূর্ণ পরিধিতেও প্রচ্ছন্নের ফাইন্ডিং বাদ",
+      "deemed_export_doc_incomplete" not in k2)
+check("পূর্ণ পরিধিতে অনুচ্ছেদ বেশি",
+      len(pl2["paragraphs"]) > len(pl1["paragraphs"]))
+check("পূর্ণ পরিধিতে প্রশ্ন বেশি",
+      len(pl2["review_questions"]) > len(pl1["review_questions"]))
+
+# ধরন ৩ — প্রচ্ছন্ন
+p3 = AuditProfile(is_deemed=True, has_register=True, has_export_data=True)
+pl3 = assemble_report_plan(p3, ALL_F)
+k3 = {f["kind"] for f in pl3["findings"]}
+check("প্রচ্ছন্নে গন্তব্য-অসঙ্গতি বাদ (সরাসরির বিষয়)",
+      "destination_mismatch" not in k3)
+check("প্রচ্ছন্নে প্রচ্ছন্ন-ফাইন্ডিং আসে",
+      "deemed_export_doc_incomplete" in k3)
+check("প্রচ্ছন্নে সরবরাহ-অনুচ্ছেদ আসে",
+      any("প্রচ্ছন্ন রপ্তানি" in t for t in pl3["paragraphs"]))
+
+# ধরন ৪ — ইপিজেড (ইউপি নয়)
+p4 = AuditProfile(is_epz=True, has_register=True, has_export_data=True)
+pl4 = assemble_report_plan(p4, ALL_F)
+k4 = {f["kind"] for f in pl4["findings"]}
+check("ইপিজেডে ইউপি-নির্ভর ফাইন্ডিং বাদ",
+      "up_arithmetic" not in k4 and "export_without_up" not in k4)
+check("ইপিজেডে আইপি/ইপি অনুচ্ছেদ আসে",
+      any("আইপি/ইপি" in t for t in pl4["paragraphs"]))
+check("ইপিজেডে ইউপি অনুচ্ছেদ বাদ",
+      not any(t.startswith("ইউটিলাইজেশন পারমিশনের") for t in pl4["paragraphs"]))
+check("ইপিজেডে ইউপি-প্রশ্ন বাদ",
+      not any("ইউপি" in q for q, _, _ in pl4["review_questions"]))
+
+# পোশাক শিল্প — ইউডি, ইউপি নয়
+p5 = AuditProfile(is_rmg=True, has_register=True)
+check("পোশাক শিল্পেও ইউপি-নির্ভর ছাঁচ প্রযোজ্য নয়",
+      not template_applies("up_arithmetic", p5))
+
+check("শূন্য ফাইন্ডিং দিলে কিছুই আসে না",
+      assemble_report_plan(p2, [])["findings"] == [])
 
 print()
 print("RESULT:", "ALL PASS ✅" if _all_ok else "❌ FAILURES")
