@@ -35,6 +35,9 @@ from services.checks.evidence import scan_documents
 from services.schedule_checks import (
     check_coefficient_validity, check_up_arithmetic,
 )
+from services.evidence_paths import (
+    audit_route, filter_findings, DOC_LABELS,
+)
 from services.electricity_consistency import (
     check_electricity_consistency,
     DEFAULT_THRESHOLD_PCT,
@@ -276,6 +279,30 @@ async def checks_validity(body: dict = Body(default={})):
 async def checks_evidence_scan(body: dict = Body(default={})):
     """documents:[{id, filename, ocrText, ocrStatus?}] → Evidence Chips।"""
     return scan_documents(body.get("documents") or [], NUMERIC_CHECKS)
+
+
+@app.get("/api/evidence/documents")
+async def evidence_documents():
+    """যে মৌলিক দলিলগুলির বিকল্প-পথ জানা আছে — সাংকেতিক নাম ও বাংলা নাম।"""
+    return [{"key": k, "label": v} for k, v in DOC_LABELS.items()]
+
+
+@app.post("/api/evidence/route")
+async def evidence_route(body: dict = Body(default={})):
+    """
+    ★ মৌলিক দলিল অনুপস্থিত হইলে নিরীক্ষার বিকল্প পরিকল্পনা।
+    body: {missing: ["bond_register", "up", ...]}
+    """
+    return audit_route(body.get("missing") or [])
+
+
+@app.post("/api/evidence/filter-findings")
+async def evidence_filter(body: dict = Body(default={})):
+    """
+    ★ অহেতুক দাবিনামা রোধ — প্রমাণাভাবে নিষিদ্ধ দাবি ছাঁকিয়া ফেলে।
+    body: {findings: [{kind, ...}], missing: [...]}
+    """
+    return filter_findings(body.get("findings") or [], body.get("missing") or [])
 
 
 @app.post("/api/checks/coefficient-validity")
