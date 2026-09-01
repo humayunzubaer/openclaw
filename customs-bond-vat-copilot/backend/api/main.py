@@ -461,6 +461,57 @@ async def agent_reset(body: dict = Body(default={})):
     return {"ok": True, "message": "সেশন মুছিয়া ফেলা হইয়াছে।"}
 
 
+# ==========================================================
+# প্রতিবেদন — Word (.docx), ফন্ট বাছাইসহ
+# ==========================================================
+
+@app.get("/api/report/fonts")
+async def report_fonts():
+    """কোন কোন ফন্ট-বিন্যাসে প্রতিবেদন দেওয়া যায়"""
+    from services.docx_report import SCHEMES
+    return [
+        {"key": s.key, "label": s.label, "bangla_font": s.bangla_font,
+         "latin_font": s.latin_font, "note": s.note}
+        for s in SCHEMES.values()
+    ]
+
+
+@app.post("/api/report/font-proof")
+async def report_font_proof(body: dict = Body(default={})):
+    """
+    ফন্ট যাচাই-নথি — নিরীক্ষক নিজের কম্পিউটারে খুলিয়া চোখে দেখিয়া
+    নিশ্চিত হইতে পারেন লেখা বিকৃত কি না।
+    body: {font?: "nikosh" | "sutonnymj"}
+    """
+    from services.docx_report import scheme_for
+    from services.font_proof import build_font_proof
+    scheme = scheme_for(body.get("font"))
+    out = Path(tempfile.gettempdir()) / f"font_proof_{scheme.key}.docx"
+    build_font_proof(scheme, out)
+    return FileResponse(
+        str(out),
+        media_type=("application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"),
+        filename=f"ফন্ট-যাচাই-{scheme.bangla_font}.docx",
+    )
+
+
+@app.post("/api/report/convert")
+async def report_convert(body: dict = Body(default={})):
+    """
+    যেকোনো বাংলা লেখা বিজয় (SutonnyMJ) ASCII-তে বদলায়।
+    body: {text}
+    """
+    from services.bijoy import to_bijoy_runs, unicode_to_bijoy
+    text = body.get("text") or ""
+    return {
+        "bijoy": unicode_to_bijoy(text),
+        "runs": [{"font": k, "text": v} for k, v in to_bijoy_runs(text)],
+        "note": ("'other' রানগুলি ইংরেজি ফন্টে রাখিতে হইবে — "
+                 "SutonnyMJ-তে রাখিলে বিকৃত দেখাইবে।"),
+    }
+
+
 # ---- static frontend (সবার শেষে mount, যাতে /api/* আগে ম্যাচ করে) ----
 if STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

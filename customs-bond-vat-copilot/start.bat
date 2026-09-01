@@ -9,7 +9,7 @@ echo     Customs Bond Audit Intelligence Platform
 echo   ============================================================
 echo.
 
-REM ---------- ১) Python খুঁজি ----------
+REM ---------- 1) Find Python ----------
 set "PY="
 where py >nul 2>nul && set "PY=py -3"
 if not defined PY ( where python >nul 2>nul && set "PY=python" )
@@ -26,7 +26,7 @@ if not defined PY (
   exit /b 1
 )
 
-REM ---------- ২) প্রথমবার হইলে পরিবেশ তৈরি ----------
+REM ---------- 2) First run: build environment ----------
 if not exist ".venv\Scripts\python.exe" (
   echo   Prothombar chalu hocche - proyojoniyo package install kora hocche.
   echo   Ei kaj-ti 2-5 minute nite pare. Onugroho kore opekkha korun...
@@ -50,7 +50,7 @@ if not exist ".venv\Scripts\python.exe" (
   echo.
 )
 
-REM ---------- ৩) চালু ----------
+REM ---------- 3) Launch ----------
 echo   Server chalu hocche... Browser nije-i khule jabe.
 echo   Bondho korte ei window-te CTRL+C chapun.
 echo.
