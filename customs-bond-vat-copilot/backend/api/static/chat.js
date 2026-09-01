@@ -96,6 +96,37 @@
     }
   }
 
+  /* ---- নথি নামানো ---- */
+  async function download(path, filename) {
+    var note = $("font-note");
+    note.textContent = "নথি তৈরি হইতেছে…";
+    try {
+      var r = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: SESSION, font: $("chat-font").value })
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      var blob = await r.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      note.textContent = "নামানো হইয়াছে।";
+    } catch (e) {
+      note.textContent = "নথি তৈরি হয় নাই: " + e.message;
+    }
+  }
+
+  function fontHint() {
+    var f = $("chat-font").value;
+    $("font-note").textContent = (f === "sutonnymj")
+      ? "SutonnyMJ ইউনিকোড নহে — লেখা রূপান্তরিত হইয়া বসিবে। ফন্টটি "
+        + "কম্পিউটারে ইনস্টল থাকা চাই।"
+      : "ইউনিকোড — যেকোনো কম্পিউটারে খোলা যাইবে।";
+  }
+
   /* ---- স্তরের অবস্থা ---- */
   async function refreshTier() {
     try {
@@ -147,6 +178,15 @@
       bubble("sys", "শ্রেণি নির্ধারিত: " +
         $("chat-entity").options[$("chat-entity").selectedIndex].text);
     };
+    $("btn-docx").onclick = function () {
+      download("/api/report/docx", "নিরীক্ষা-প্রতিবেদন.docx");
+    };
+    $("btn-proof").onclick = function () {
+      download("/api/report/font-proof", "ফন্ট-যাচাই.docx");
+    };
+    $("chat-font").onchange = fontHint;
+    fontHint();
+
     $("chat-reset").onclick = async function () {
       try { await post("/api/agent/reset", { session_id: SESSION }); } catch (e) {}
       greet();

@@ -221,6 +221,17 @@ class AgentRouter:
                 "সারাংশ", "এ পর্যন্ত"),
              self._h_state),
 
+            ("font", lambda q: _has(
+                q, "ফন্ট", "সুতন্বী", "সুতন্নী", "sutonny", "নিকশ",
+                "nikosh", "বিজয়", "bijoy", "অভ্র", "ইউনিকোড"),
+             self._h_font),
+
+            ("export_docx", lambda q: (
+                _has(q, "ওয়ার্ড", "word", "docx", "ডাউনলোড", "নামাও",
+                     "নামিয়ে", "ফাইল দাও", "নথি দাও", "প্রিন্ট")
+                and _has(q, "প্রতিবেদন", "রিপোর্ট", "report", "নথি")),
+             self._h_export),
+
             ("report", lambda q: _has(
                 q, "প্রতিবেদন", "রিপোর্ট", "report", "অনুচ্ছেদ", "খসড়া"),
              self._h_report),
@@ -553,6 +564,88 @@ class AgentRouter:
             intent=f"check:{code}", text=txt,
             basis=[_CHECK_BASIS.get(code, "")] if _CHECK_BASIS.get(code) else [],
             data={"check": code, "amount": val or 0},
+        )
+
+    # ------------------------------------------------------
+    def _h_font(self, raw: str, q: str) -> RouterReply:
+        """ফন্ট সংক্রান্ত পরামর্শ — এবং নিরীক্ষকের পছন্দ মনে রাখা"""
+        from services.docx_report import SCHEMES
+
+        picked = None
+        if _has(q, "সুতন্বী", "সুতন্নী", "sutonny", "বিজয়", "bijoy"):
+            picked = "sutonnymj"
+        elif _has(q, "নিকশ", "nikosh", "ইউনিকোড"):
+            picked = "nikosh"
+
+        if picked:
+            self.sess.profile["font"] = picked
+            sc = SCHEMES[picked]
+            extra = (
+                "\n\nএকটি কথা মনে রাখিবেন — SutonnyMJ ইউনিকোড ফন্ট নহে। "
+                "উহাতে বাংলা অক্ষরগুলি ইংরেজি সংকেতে বসানো। তাই লেখাটি "
+                "রূপান্তর করিয়া বসানো হয়, এবং ইংরেজি অংশ (যেমন H.S. Code) "
+                "পৃথক ফন্টে রাখা হয়। যে কম্পিউটারে SutonnyMJ নাই সেখানে "
+                "নথিটি বিকৃত দেখাইবে।"
+                if picked == "sutonnymj" else
+                "\n\nইহাই নিরাপদ বাছাই — ইউনিকোড হওয়ায় যেকোনো কম্পিউটারে "
+                "খোলা যায়, লেখা খোঁজা ও অনুলিপি করা চলে।"
+            )
+            return RouterReply(
+                text=f"ঠিক আছে, প্রতিবেদন **{sc.label}** ফন্টে দিব।"
+                     f"\n\n{sc.note}{extra}",
+                next_actions=[
+                    "“ওয়ার্ডে প্রতিবেদন নামাও” — নথিটি তৈরি করিয়া দিব",
+                    "“ফন্ট যাচাই-নথি দাও” — চোখে দেখিয়া মিলাইয়া লইতে পারিবেন",
+                ],
+                data={"font": picked},
+            )
+
+        cur = self.sess.profile.get("font", "nikosh")
+        lines = ["দুইটি ফন্টে প্রতিবেদন দিতে পারি —", ""]
+        for sc in SCHEMES.values():
+            mark = "  ← এখন নির্বাচিত" if sc.key == cur else ""
+            lines.append(f"**{sc.label}**{mark}")
+            lines.append(f"{sc.note}\n")
+        lines.append(
+            "পার্থক্যটা মৌলিক: Nikosh ইউনিকোড, লেখা অপরিবর্তিত থাকে। "
+            "SutonnyMJ পুরাতন ধাঁচের — বাংলা অক্ষর ইংরেজি সংকেতে বসানো, "
+            "তাই লেখাটি রূপান্তর করিয়া দিতে হয়।"
+        )
+        return RouterReply(
+            text="\n".join(lines),
+            next_actions=["“SutonnyMJ তে দাও” অথবা “Nikosh এ দাও” বলুন"],
+            data={"current": cur},
+        )
+
+    # ------------------------------------------------------
+    def _h_export(self, raw: str, q: str) -> RouterReply:
+        """ওয়ার্ড নথি তৈরির নির্দেশ"""
+        font = self.sess.profile.get("font", "nikosh")
+        if _has(q, "সুতন্বী", "সুতন্নী", "sutonny", "বিজয়"):
+            font = "sutonnymj"
+            self.sess.profile["font"] = font
+        elif _has(q, "নিকশ", "nikosh"):
+            font = "nikosh"
+            self.sess.profile["font"] = font
+
+        from services.docx_report import SCHEMES
+        sc = SCHEMES[font]
+        has = self.sess.analysis is not None
+        body = (
+            f"প্রতিবেদনটি **{sc.label}** ফন্টে তৈরি করিয়া দিব।"
+            if has else
+            f"প্রতিবেদনের কাঠামো **{sc.label}** ফন্টে দিতে পারি, তবে "
+            "এখনো কোনো বিশ্লেষণের ফল আমার কাছে নাই — তাই আপত্তির অংশটি "
+            "খালি থাকিবে। ফাইল দিয়া নিরীক্ষা চালাইলে পূর্ণ প্রতিবেদন হইবে।"
+        )
+        return RouterReply(
+            text=body + "\n\nচ্যাটের নিচে **“ওয়ার্ড নথি”** বোতামে চাপ "
+                        "দিলেই নথিটি নামিবে।",
+            next_actions=(
+                [] if has else ["আগে ফাইল দিন — তারপর “সম্পূর্ণ নিরীক্ষা কর”"]
+            ),
+            data={"font": font, "endpoint": "/api/report/docx",
+                  "ready": has},
         )
 
     # ------------------------------------------------------

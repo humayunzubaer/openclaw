@@ -512,6 +512,69 @@ async def report_convert(body: dict = Body(default={})):
     }
 
 
+@app.post("/api/report/docx")
+async def report_docx(body: dict = Body(default={})):
+    """
+    পূর্ণাঙ্গ নিরীক্ষা প্রতিবেদন — Word (.docx), বাছাই করা ফন্টে।
+
+    body: {session_id?, font?: "nikosh"|"sutonnymj",
+           company?, address?, bond_license?, bin_no?,
+           period_from?, period_to?, entitlement_para?}
+
+    সেশনে চলমান বিশ্লেষণ থাকিলে তাহার ফল ব্যবহৃত হয়; নতুবা কেবল
+    কাঠামো ও পর্যালোচনার ছক আসে।
+    """
+    from knowledge.report_style import AuditProfile
+    from services.agent_service import get_session, _engine_findings
+    from services.audit_report_docx import ReportContext, build_audit_report
+    from services.doc_requisition import build_requisition
+
+    sess = get_session(body.get("session_id") or "default")
+    prof = sess.profile
+    ent = body.get("entity_type") or prof.get("entity_type") or "direct"
+
+    try:
+        entity_label = build_requisition(ent).entity_label
+    except Exception:  # noqa: BLE001
+        entity_label = ""
+
+    summary = (sess.analysis.summary if sess.analysis is not None else {}) or {}
+    kinds = _engine_findings(sess) if sess.analysis is not None else []
+    findings = [{"kind": k, "para": "", "amount": 0} for k in kinds]
+
+    ctx = ReportContext(
+        company=body.get("company") or prof.get("company") or "নিরীক্ষাধীন প্রতিষ্ঠান",
+        address=body.get("address") or "",
+        bond_license=body.get("bond_license") or "",
+        bin_no=body.get("bin_no") or "",
+        entity_label=entity_label,
+        period_from=body.get("period_from") or prof.get("period_from") or "",
+        period_to=body.get("period_to") or prof.get("period_to") or "",
+        profile=AuditProfile(
+            is_epz=ent.startswith("epz"),
+            is_deemed="deemed" in ent,
+            is_rmg=ent.startswith("rmg"),
+            includes_vat=bool(prof.get("includes_vat", True)),
+            has_register="bond_register" not in sess.missing_docs,
+            has_export_data="export_data" not in sess.missing_docs,
+        ),
+        summary=summary,
+        findings=findings,
+        missing_docs=list(sess.missing_docs),
+        entitlement_para=body.get("entitlement_para") or "",
+    )
+
+    font = body.get("font") or "nikosh"
+    out = Path(tempfile.gettempdir()) / f"audit_report_{sess.session_id}_{font}.docx"
+    build_audit_report(ctx, out, font=font)
+    return FileResponse(
+        str(out),
+        media_type=("application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"),
+        filename="নিরীক্ষা-প্রতিবেদন.docx",
+    )
+
+
 # ---- static frontend (সবার শেষে mount, যাতে /api/* আগে ম্যাচ করে) ----
 if STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
