@@ -103,11 +103,14 @@ print("== ৬. ★ PII প্রহরী — প্রতিষ্ঠানে�
 BANNED = ["Gold Shine", "গোল্ড শাইন", "Haigenity", "হাইজেন", "RahimAfrooz",
           "রহিমআফরোজ", "Globatt", "গ্লোব্যাট", "Fujian", "ফুজিয়ান",
           "Traveling Goods", "RGL", "Cus-ESB-W", "ঈশ্বরদী ইপিজেড, পাবনা"]
+SKIP_DIRS = {".venv", "venv", "node_modules", "__pycache__", ".git",
+             "site-packages", "audits", "dist", "build"}
 hits = []
 for p in ROOT.rglob("*"):
     if not p.is_file() or p.suffix not in {".py", ".md", ".json"}:
         continue
-    if "node_modules" in p.parts or p.name == "test_report_template.py":
+    # তৃতীয়-পক্ষের কোড ও ক্যাশে বাদ — উহাতে মিথ্যা মিল আসে
+    if SKIP_DIRS & set(p.parts) or p.name == "test_report_template.py":
         continue
     try:
         s = p.read_text(encoding="utf-8")

@@ -345,6 +345,122 @@ async def checks_electricity(body: dict = Body(default={})):
     ))
 
 
+# ==========================================================
+# এজেন্ট — চ্যাট সহকারী ও উপদেষ্টা
+# ==========================================================
+
+@app.post("/api/agent/ask")
+async def agent_ask(body: dict = Body(default={})):
+    """
+    এজেন্টকে প্রশ্ন করো / কমান্ড দাও।
+
+    body: {question, session_id?, allow_cloud?, prefer_llm?}
+
+    স্তর: নিশ্চিত রাউটার আগে; বোঝা না গেলে (বা prefer_llm হইলে) এলএলএম।
+    """
+    from services.agent_service import get_session
+    from services.agent_router import AgentRouter
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(400, "প্রশ্ন খালি")
+
+    sess = get_session(body.get("session_id") or "default")
+    rep = AgentRouter(sess).route(question)
+
+    out = {
+        "session_id": sess.session_id,
+        "intent": rep.intent,
+        "answer": rep.render(),
+        "text": rep.text,
+        "basis": rep.basis,
+        "needs_documents": rep.needs_documents,
+        "next_actions": rep.next_actions,
+        "data": rep.data,
+        "source": "rules",
+        "confidence": rep.confidence,
+    }
+
+    # রাউটার সামলাইতে না পারিলে — এলএলএম থাকিলে তাহাকে দাও
+    if (not rep.handled) or body.get("prefer_llm"):
+        try:
+            agent = sess.agent()
+            reply = agent.ask(
+                question, allow_cloud=bool(body.get("allow_cloud")),
+            )
+            if reply.text and reply.provider != "rules_only":
+                out.update({
+                    "answer": reply.text, "text": reply.text,
+                    "source": reply.provider, "model": reply.model,
+                    "tools_used": reply.tools_used,
+                    "applied_rules": reply.applied_rules,
+                    "rule_detected": reply.rule_detected,
+                    "rule_proposal": reply.rule_proposal,
+                })
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"এলএলএম স্তর ব্যর্থ: {e}")
+
+    sess.last_reply = out
+    return out
+
+
+@app.get("/api/agent/status")
+async def agent_status(session_id: str = "default"):
+    """এজেন্টের অবস্থা — কোন স্তর সক্রিয়, কী কী টুল আছে"""
+    from services.agent_service import get_session
+    sess = get_session(session_id)
+    try:
+        st = sess.agent().status()
+    except Exception as e:  # noqa: BLE001
+        st = {"ত্রুটি": str(e)}
+    return {"session": sess.snapshot(), "agent": st}
+
+
+@app.post("/api/agent/learn")
+async def agent_learn(body: dict = Body(default={})):
+    """
+    ★ এজেন্টকে নূতন নিয়ম শেখাও (নিরীক্ষকের নিশ্চিতকরণের পর)।
+    body: {statement, scope?, kind?, legal_reference?, session_id?}
+    """
+    from services.agent_service import get_session
+    statement = (body.get("statement") or "").strip()
+    if not statement:
+        raise HTTPException(400, "নিয়মের বিবরণ খালি")
+    sess = get_session(body.get("session_id") or "default")
+    return sess.agent().learn(
+        statement=statement,
+        scope=body.get("scope") or "general",
+        kind=body.get("kind") or "procedure",
+        legal_reference=body.get("legal_reference") or "",
+    )
+
+
+@app.post("/api/agent/profile")
+async def agent_profile(body: dict = Body(default={})):
+    """
+    নিরীক্ষার ধরন জানাও — ইহাতেই প্রাসঙ্গিকতা-ছাঁকনি চলে।
+    body: {session_id?, entity_type?, company?, period_from?, period_to?,
+           includes_vat?, missing_documents?[]}
+    """
+    from services.agent_service import get_session
+    sess = get_session(body.get("session_id") or "default")
+    for k in ("entity_type", "company", "period_from", "period_to",
+              "includes_vat"):
+        if k in body and body[k] not in (None, ""):
+            sess.profile[k] = body[k]
+    if isinstance(body.get("missing_documents"), list):
+        sess.missing_docs = [str(x) for x in body["missing_documents"]]
+    return sess.snapshot()
+
+
+@app.post("/api/agent/reset")
+async def agent_reset(body: dict = Body(default={})):
+    """সেশন মুছিয়া নূতন করিয়া শুরু"""
+    from services.agent_service import reset_session
+    reset_session(body.get("session_id") or "default")
+    return {"ok": True, "message": "সেশন মুছিয়া ফেলা হইয়াছে।"}
+
+
 # ---- static frontend (সবার শেষে mount, যাতে /api/* আগে ম্যাচ করে) ----
 if STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

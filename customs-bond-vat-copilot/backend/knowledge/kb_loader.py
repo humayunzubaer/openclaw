@@ -545,9 +545,13 @@ class KnowledgeBase:
         terms = [t for t in re.split(r"\s+", (query or "").strip()) if len(t) > 1]
         if not terms:
             return []
+        # পুরো বাক্যাংশ আগে খুঁজি; না পাইলে প্রথম শব্দ
+        phrase = " ".join(terms)
+        needle = phrase if any(phrase in d for d in self.documents.values()) \
+            else terms[0]
         hits: list[dict] = []
         for mod, doc in sorted(self.documents.items()):
-            for m in re.finditer(re.escape(terms[0]), doc):
+            for m in re.finditer(re.escape(needle), doc):
                 s = max(0, m.start() - context_chars // 2)
                 snippet = doc[s:s + context_chars].replace("\n", " ")
                 hits.append({
