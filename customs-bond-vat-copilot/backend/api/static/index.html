@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="bn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Customs Bond Audit — Import Intelligence</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <meta name="theme-color" content="#1f5f8b" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">⚖️</span>
+        <div>
+          <strong>Customs Bond Audit — Import Intelligence</strong>
+          <small>Module 1 · প্রাপ্যতা বনাম আমদানি · ১০০% লোকাল</small>
+        </div>
+      </div>
+      <span id="health" class="badge badge-muted">সংযোগ যাচাই…</span>
+    </header>
+
+    <main>
+      <div class="viewnav">
+        <button id="nav-file" class="btn btn-primary btn-sm">📄 ফাইল বিশ্লেষণ (Module 1)</button>
+        <button id="nav-manual" class="btn btn-ghost btn-sm">🧮 ম্যানুয়াল যাচাই (সংখ্যাগত + মেয়াদ)</button>
+        <button id="nav-chat" class="btn btn-ghost btn-sm">💬 নিরীক্ষা সহায়ক</button>
+      </div>
+
+      <div id="view-file">
+      <section class="card">
+        <h2>১. নথি ও প্যারামিটার</h2>
+        <div class="grid2">
+          <label>প্রাপ্যতা শীট (Entitlement) <span class="req">*</span>
+            <input type="file" id="ent" accept=".xlsx,.xls,.csv" />
+          </label>
+          <label>আমদানি (AIS/MIS/IM-4) <span class="req">*</span>
+            <input type="file" id="imp" accept=".xlsx,.xls,.csv" />
+          </label>
+          <label>স্থানীয় ক্রয় (ঐচ্ছিক)
+            <input type="file" id="local" accept=".xlsx,.xls,.csv" />
+          </label>
+          <label>বন্ড রেজিস্টার — তফসিল-১ (ঐচ্ছিক; দাবি ২ প্রবেশক্রম ও দাবি ৩)
+            <input type="file" id="register" accept=".xlsx,.xls,.csv" />
+          </label>
+          <label>নতুন প্রাপ্যতা/UP অনুমোদনের তারিখ (মেয়াদোত্তর দাবির সীমা)
+            <input type="date" id="nxt" />
+          </label>
+          <label>বন্ড লাইসেন্সের ধারণক্ষমতা (মে.টন, ঐচ্ছিক)
+            <input type="number" id="lic" step="0.001" placeholder="যেমন: 3400" />
+          </label>
+          <label>ওয়্যারহাউসের ধারণক্ষমতা (মে.টন, ঐচ্ছিক)
+            <input type="number" id="wh" step="0.001" placeholder="প্রদত্ত মান" />
+          </label>
+          <label class="check">
+            <input type="checkbox" id="ext" />
+            <span>বিধি ৮ — বর্ধিত প্রাপ্যতা (৩ মাস) প্রযোজ্য (বিয়োজন-যাচাই পর্যবেক্ষণ দেখাবে)</span>
+          </label>
+        </div>
+        <div class="row-end">
+          <button id="xlsx" class="btn btn-ghost">📊 Excel কার্যপত্র</button>
+          <button id="run" class="btn btn-primary">🔍 বিশ্লেষণ করুন</button>
+        </div>
+        <div id="msg" class="msg"></div>
+      </section>
+
+      <section id="out" class="hidden">
+        <div class="card">
+          <h2>২. দাবির সারসংক্ষেপ</h2>
+          <div id="stats" class="stat-row"></div>
+          <div id="grandtotal" class="grandtotal"></div>
+        </div>
+        <div class="card">
+          <h2>৩. সতর্কতা ও টীকা</h2>
+          <ul id="warnings" class="warnings"></ul>
+        </div>
+        <div id="rule8"></div>
+        <div id="tables"></div>
+      </section>
+      </div><!-- /view-file -->
+
+      <div id="view-manual" class="hidden"></div>
+
+      <div id="view-chat" class="hidden">
+        <section class="card chat-card">
+          <div class="chat-head">
+            <h2 style="margin:0">নিরীক্ষা সহায়ক</h2>
+            <span id="chat-tier" class="badge badge-muted">স্তর যাচাই…</span>
+            <button id="chat-reset" class="btn btn-ghost btn-sm">নূতন করিয়া শুরু</button>
+          </div>
+
+          <div class="chat-profile">
+            <label>প্রতিষ্ঠানের শ্রেণি
+              <select id="chat-entity">
+                <option value="direct">সরাসরি রপ্তানিমুখী (পোশাক ব্যতীত)</option>
+                <option value="rmg_direct">তৈরি পোশাক শিল্প</option>
+                <option value="deemed">প্রচ্ছন্ন রপ্তানিকারক</option>
+                <option value="epz_direct">ইপিজেডস্থ সরাসরি</option>
+                <option value="epz_deemed">ইপিজেডস্থ প্রচ্ছন্ন</option>
+              </select>
+            </label>
+            <label>প্রতিষ্ঠানের নাম
+              <input type="text" id="chat-company" placeholder="নিরীক্ষাধীন প্রতিষ্ঠান" />
+            </label>
+          </div>
+
+          <div id="chat-log" class="chat-log"></div>
+
+          <div id="chat-chips" class="chat-chips"></div>
+
+          <div class="chat-out">
+            <label>প্রতিবেদনের ফন্ট
+              <select id="chat-font">
+                <option value="nikosh">Nikosh (ইউনিকোড)</option>
+                <option value="sutonnymj">SutonnyMJ (বিজয়)</option>
+              </select>
+            </label>
+            <button id="btn-docx" class="btn btn-primary btn-sm">
+              📄 ওয়ার্ড নথি</button>
+            <button id="btn-proof" class="btn btn-ghost btn-sm">
+              🔍 ফন্ট যাচাই-নথি</button>
+            <span id="font-note" class="chat-note"></span>
+          </div>
+
+          <div class="chat-input">
+            <textarea id="chat-q" rows="2"
+              placeholder="যা বলতে চান লিখুন — যেমন “সরাসরি রপ্তানিকারকের কী কী দলিল লাগবে” অথবা “রেজিস্টার নাই, কী করব”"></textarea>
+            <button id="chat-send" class="btn btn-primary">পাঠান</button>
+          </div>
+          <p class="chat-note">সব হিসাব ও আইনি সূত্র এই কম্পিউটারেই নিরূপিত হয় — কোনো তথ্য ইন্টারনেটে যায় না।</p>
+        </section>
+      </div><!-- /view-chat -->
+    </main>
+
+    <script src="/app.js"></script>
+    <script src="/chat.js"></script>
+  </body>
+</html>
