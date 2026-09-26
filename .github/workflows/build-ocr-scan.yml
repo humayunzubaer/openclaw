@@ -1,0 +1,76 @@
+name: Build OCR Scan APK
+
+on:
+  push:
+    branches: [ocr-scan-app-build]
+    paths:
+      - 'mobile-src/ocr-scan-app/**'
+      - '.github/workflows/build-ocr-scan.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java (Android build toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create fresh Flutter project shell
+        # Never run flutter create on top of our own source dir - it can silently
+        # overwrite our custom pubspec.yaml/lib/. Instead create a throwaway shell
+        # project elsewhere, then copy our source on top of it in the next step.
+        run: |
+          flutter create --org com.ocrscan --project-name ocr_scan_app /tmp/app_shell
+
+      - name: Copy our source over the shell
+        run: |
+          SRC=mobile-src/ocr-scan-app
+          DST=/tmp/app_shell
+          cp -r "$SRC/lib" "$DST/"
+          cp "$SRC/pubspec.yaml" "$DST/pubspec.yaml"
+          mkdir -p "$DST/assets/tessdata" "$DST/assets/fonts"
+
+      - name: Fetch Bengali Tesseract trained data (ben.traineddata)
+        run: |
+          curl -L -f -o /tmp/app_shell/assets/tessdata/ben.traineddata \
+            https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/ben.traineddata
+
+      - name: Fetch Noto Sans Bengali font
+        # google/fonts ships this as a variable font (brackets need URL-encoding);
+        # confirmed via ofl/notosansbengali/METADATA.pb's filename field.
+        run: |
+          curl -L -f -o /tmp/app_shell/assets/fonts/NotoSansBengali-Regular.ttf \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth,wght%5D.ttf"
+
+      - name: Add camera permission to AndroidManifest.xml
+        run: |
+          MANIFEST=/tmp/app_shell/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$MANIFEST" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA"/>\n    <application#' "$MANIFEST"
+          cat "$MANIFEST"
+
+      - name: flutter pub get
+        working-directory: /tmp/app_shell
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: /tmp/app_shell
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-scan-apk
+          path: /tmp/app_shell/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
