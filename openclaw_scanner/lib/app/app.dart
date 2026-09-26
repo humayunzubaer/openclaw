@@ -7,7 +7,7 @@ class ScannerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'OpenClaw Scanner',
+      title: 'OCR Manus',
       debugShowCheckedModeBanner: false,
       // Noto Sans Bengali app-wide → সব Bengali label-এ যুক্তবর্ণ ঠিকমতো render হবে।
       theme: ThemeData(
