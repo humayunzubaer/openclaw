@@ -1,0 +1,17 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # Generated bindings / drift output — not authored by hand.
+    - lib/native/scanner_core_bindings.g.dart
+    - lib/**/*.g.dart
+  errors:
+    # Bengali identifiers/comments are intentional throughout this project.
+    todo: ignore
+
+linter:
+  rules:
+    # FFI + isolate code deliberately uses print-free logging and const-heavy
+    # constructors; keep the default flutter_lints set otherwise.
+    prefer_const_constructors: true
+    avoid_print: true

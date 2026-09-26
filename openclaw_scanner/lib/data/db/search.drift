@@ -1,0 +1,13 @@
+-- Contentless-ish FTS index over aggregated per-page text.
+CREATE VIRTUAL TABLE page_fts USING fts5(
+  page_id UNINDEXED,
+  content,
+  tokenize = 'unicode61 remove_diacritics 0'  -- Bengali মাত্রা/kar রাখে
+);
+
+-- Library screen-এর full-text search query।
+searchPages(:term AS TEXT):
+  SELECT p.* FROM page_fts f
+  JOIN pages p ON p.id = f.page_id
+  WHERE page_fts MATCH :term
+  ORDER BY rank;
