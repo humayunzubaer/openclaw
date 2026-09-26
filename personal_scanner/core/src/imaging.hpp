@@ -31,9 +31,6 @@ double estimateSkew(const cv::Mat& ink, double maxDegrees = 8.0);
 
 cv::Mat rotate(const cv::Mat& image, double degrees, int borderValue);
 
-// True when text lines run vertically (page photographed sideways). Up/down
-// cannot be told from geometry alone; the engine settles it by OCR confidence.
-bool isSideways(const cv::Mat& ink);
 cv::Mat rotateQuarterTurns(const cv::Mat& image, int turns);
 
 // Median height of glyph clusters, used to bring text to the size the

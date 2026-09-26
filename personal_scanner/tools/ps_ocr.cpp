@@ -1,6 +1,6 @@
 // Desktop front end for the Personal Scanner core, used by the benchmark.
 //
-//   ps_ocr [--json] [--lang ben+eng] [--tessdata DIR] [--debug DIR]
+//   ps_ocr [--json | --permit] [--lang ben] [--tessdata DIR] [--debug DIR]
 //          [--no-page] [--no-tables] [--no-rereads] IMAGE
 #include <cstdio>
 #include <cstring>
@@ -10,10 +10,11 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include "ps/engine.hpp"
+#include "ps/import_permit.hpp"
 
 int main(int argc, char** argv) {
   ps::Options opt;
-  bool json = false;
+  bool json = false, permit = false;
   std::string image;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -22,6 +23,7 @@ int main(int argc, char** argv) {
       return argv[++i];
     };
     if (a == "--json") json = true;
+    else if (a == "--permit") permit = true;
     else if (a == "--lang") opt.languages = next();
     else if (a == "--tessdata") opt.tessdataDir = next();
     else if (a == "--debug") opt.debugDir = next();
@@ -45,7 +47,8 @@ int main(int argc, char** argv) {
   try {
     ps::Engine engine(opt);
     const ps::Page page = engine.recognize(img);
-    std::cout << (json ? page.json() + "\n" : page.text());
+    if (permit) std::cout << ps::permit::extract(page.text()).json() << '\n';
+    else std::cout << (json ? page.json() + "\n" : page.text());
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     return 1;

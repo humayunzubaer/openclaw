@@ -152,21 +152,6 @@ cv::Mat rotate(const cv::Mat& image, double degrees, int borderValue) {
   return out;
 }
 
-namespace {
-
-double projectionSharpness(const cv::Mat& ink) {
-  cv::Mat rows;
-  cv::reduce(ink, rows, 1, cv::REDUCE_SUM, CV_64F);
-  double score = 0;
-  for (int i = 1; i < rows.rows; ++i) {
-    const double d = rows.at<double>(i) - rows.at<double>(i - 1);
-    score += d * d;
-  }
-  return score / std::max(1, ink.cols);
-}
-
-}  // namespace
-
 cv::Mat rotateQuarterTurns(const cv::Mat& image, int turns) {
   cv::Mat out;
   switch (((turns % 4) + 4) % 4) {
@@ -175,15 +160,6 @@ cv::Mat rotateQuarterTurns(const cv::Mat& image, int turns) {
     case 3: cv::rotate(image, out, cv::ROTATE_90_COUNTERCLOCKWISE); return out;
     default: return image.clone();
   }
-}
-
-bool isSideways(const cv::Mat& ink) {
-  const double s = 1200.0 / std::max(ink.cols, ink.rows);
-  cv::Mat small;
-  cv::resize(ink, small, {}, s, s, cv::INTER_AREA);
-  cv::threshold(small, small, 64, 255, cv::THRESH_BINARY);
-  // Text lines give a sharp row profile only when they run horizontally.
-  return projectionSharpness(rotateQuarterTurns(small, 1)) > 1.3 * projectionSharpness(small);
 }
 
 double medianTextHeight(const cv::Mat& ink) {

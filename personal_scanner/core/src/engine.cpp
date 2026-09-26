@@ -93,6 +93,52 @@ std::string trimNumberTail(const std::string& s) {
   return text::encode(u);
 }
 
+// Tesseract's layout analysis often splits one visual row into separate
+// blocks: a form label in one, its value in another (worse on curled
+// pages). Re-join pieces that share a row (vertical overlap, no horizontal
+// overlap), left to right, so "Invoice No : HB/..." stays one line.
+std::vector<Line> mergeVisualRows(std::vector<Line> pieces) {
+  std::sort(pieces.begin(), pieces.end(), [](const Line& a, const Line& b) { return a.box.y < b.box.y; });
+  struct Row {
+    Line line;
+    std::vector<cv::Rect> parts;
+  };
+  std::vector<Row> rows;
+  for (auto& p : pieces) {
+    Row* target = nullptr;
+    for (auto& r : rows) {
+      const int top = std::max(r.line.box.y, p.box.y);
+      const int bottom = std::min(r.line.box.y + r.line.box.height, p.box.y + p.box.height);
+      if (bottom - top < 0.5 * std::min(r.line.box.height, p.box.height)) continue;
+      const bool collides = std::any_of(r.parts.begin(), r.parts.end(), [&](const cv::Rect& q) {
+        return std::min(q.x + q.width, p.box.x + p.box.width) - std::max(q.x, p.box.x) > 0;
+      });
+      if (!collides) { target = &r; break; }
+    }
+    if (!target) {
+      rows.push_back({p, {p.box}});
+      continue;
+    }
+    // Insert left to right.
+    const bool before = p.box.x < target->line.box.x;
+    target->line.text = before ? p.text + ' ' + target->line.text : target->line.text + ' ' + p.text;
+    const float n = static_cast<float>(target->parts.size());
+    target->line.confidence = (target->line.confidence * n + p.confidence) / (n + 1);
+    target->line.box |= p.box;
+    target->parts.push_back(p.box);
+  }
+  std::vector<Line> out;
+  for (auto& r : rows) out.push_back(std::move(r.line));
+  std::sort(out.begin(), out.end(), [](const Line& a, const Line& b) { return a.box.y < b.box.y; });
+  return out;
+}
+
+float meanConf(const std::vector<Word>& words) {
+  float sum = 0;
+  for (auto& w : words) sum += w.conf;
+  return words.empty() ? 0 : sum / words.size();
+}
+
 bool isNoise(const std::string& s) {
   // Rule remnants and specks read as punctuation-only strings.
   for (char32_t c : text::decode(s)) {
@@ -316,10 +362,13 @@ struct Engine::Impl {
   }
 
   double probeConfidence(tesseract::TessBaseAPI& api, const cv::Mat& gray) {
-    // Middle band of the page: enough text to judge, cheap to read.
-    const cv::Rect band(gray.cols / 8, gray.rows / 3, gray.cols * 3 / 4, gray.rows / 4);
+    // Central square: holds text in any orientation, cheap to read.
+    const int side = std::min(gray.cols, gray.rows) * 2 / 3;
+    const cv::Rect band((gray.cols - side) / 2, (gray.rows - side) / 2, side, side);
     setImage(api, gray(band));
-    api.SetPageSegMode(tesseract::PSM_AUTO);
+    // Single-block mode: no layout analysis, so text in the wrong orientation
+    // scores low instead of being found as rotated blocks.
+    api.SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
     std::unique_ptr<char[]> t(api.GetUTF8Text());
     return api.MeanTextConf();
   }
@@ -343,32 +392,38 @@ Page Engine::recognize(const cv::Mat& image) {
   }
   I.dump("page", gray);
 
-  // 2. Lighting, then orientation and script. Sideways is geometric; up vs
-  // down and Bengali vs English are decided together by which model reads a
-  // probe band most confidently.
+  // 2. Lighting, then orientation and script together: read a probe region
+  // in all four quarter turns with each model and keep the most confident.
+  // Geometry alone fails on tilted phone photos; this does not.
   cv::Mat flat = imaging::flattenIllumination(gray);
-  if (imaging::isSideways(imaging::binarize(flat))) flat = imaging::rotateQuarterTurns(flat, 1);
   {
-    const double s = std::min(1.0, 1600.0 / flat.cols);
+    const double s = std::min(1.0, 1600.0 / std::max(flat.cols, flat.rows));
     cv::Mat probe;
     cv::resize(flat, probe, {}, s, s, cv::INTER_AREA);
-    const cv::Mat flipped = imaging::rotateQuarterTurns(probe, 2);
-    const double ben0 = I.probeConfidence(I.main, probe), ben180 = I.probeConfidence(I.main, flipped);
-    double eng0 = -1, eng180 = -1;
-    if (I.hasLatin) {
-      eng0 = I.probeConfidence(I.latin, probe);
-      eng180 = I.probeConfidence(I.latin, flipped);
+    double best = -1;
+    int bestTurns = 0;
+    bool latinPage = false;
+    for (int turns = 0; turns < 4; ++turns) {
+      const cv::Mat r = imaging::rotateQuarterTurns(probe, turns);
+      const double ben = I.probeConfidence(I.main, r);
+      const double eng = I.hasLatin ? I.probeConfidence(I.latin, r) : -1;
+      // Bengali wins near-ties: the Bengali pipeline already rescues English words.
+      const bool eng_wins = eng > ben + 10;
+      const double score = std::max(ben, eng);
+      if (std::getenv("PS_TRACE")) std::fprintf(stderr, "probe turns=%d ben=%.0f eng=%.0f\n", turns, ben, eng);
+      if (score > best + 2) {
+        best = score;
+        bestTurns = turns;
+        latinPage = eng_wins;
+      }
     }
-    // Bengali wins ties: the Bengali pipeline already rescues English words.
-    const bool latinPage = std::max(eng0, eng180) > std::max(ben0, ben180) + 10;
+    flat = imaging::rotateQuarterTurns(flat, bestTurns);
     I.primary = latinPage ? &I.latin : &I.main;
     page.script = latinPage ? "latin" : "bengali";
-    const double up = latinPage ? eng0 : ben0, down = latinPage ? eng180 : ben180;
-    if (down > up + 10) flat = imaging::rotateQuarterTurns(flat, 2);
   }
 
   // 3. Deskew.
-  page.skewDegrees = imaging::estimateSkew(imaging::binarize(flat));
+  page.skewDegrees = imaging::estimateSkew(imaging::binarize(flat), 15.0);
   flat = imaging::rotate(flat, page.skewDegrees, 255);
 
   // 4. Bring text to the size the model reads best.
@@ -402,28 +457,48 @@ Page Engine::recognize(const cv::Mat& image) {
   I.dump("running", running);
 
   // 6. Running text.
-  std::vector<std::pair<int, Block>> ordered;
+  std::vector<Line> pieces;
   for (auto& words : I.ocrLines(running, tesseract::PSM_AUTO)) {
-    Line line;
-    cv::Rect box = words.front().box;
-    float confSum = 0;
-    std::string joined;
-    const auto refined = I.refineLine(running, words);
-    for (auto& best : refined) {
-      if (!joined.empty()) joined += ' ';
-      joined += best.text;
-      confSum += best.conf;
-      box |= best.box;
+    auto refined = I.refineLine(running, words);
+    if (refined.empty()) continue;
+    // Page-level layout analysis sometimes garbles a line that reads fine on
+    // its own (wide gaps between columns, stamps nearby). Re-read weak lines
+    // in isolation and keep the more confident version.
+    if (meanConf(refined) < 75) {
+      cv::Rect box = refined.front().box;
+      for (auto& w : refined) box |= w.box;
+      const cv::Rect r = cv::Rect(box.x - 6, box.y - 6, box.width + 12, box.height + 12) & cv::Rect(0, 0, running.cols, running.rows);
+      const cv::Mat crop = padWhite(running(r), kPad);
+      auto again = I.ocrLines(crop, tesseract::PSM_SINGLE_BLOCK);
+      std::vector<Word> merged;
+      for (auto& l : again)
+        for (auto& w : I.refineLine(crop, l)) {
+          Word shifted = w;
+          shifted.box += r.tl() - cv::Point(kPad, kPad);
+          merged.push_back(shifted);
+        }
+      if (!merged.empty() && meanConf(merged) > meanConf(refined) + 5) refined = std::move(merged);
     }
-    if (refined.empty() || isNoise(joined)) continue;
-    line.text = joined;
+    Line line;
+    line.box = refined.front().box;
+    float confSum = 0;
+    for (auto& w : refined) {
+      if (!line.text.empty()) line.text += ' ';
+      line.text += w.text;
+      confSum += w.conf;
+      line.box |= w.box;
+    }
+    if (isNoise(line.text)) continue;
     line.confidence = confSum / refined.size();
-    line.box = box;
+    pieces.push_back(std::move(line));
+  }
+  std::vector<std::pair<int, Block>> ordered;
+  for (auto& row : mergeVisualRows(std::move(pieces))) {
     Block b;
     b.kind = Block::Kind::Text;
-    b.box = box;
-    b.lines.push_back(std::move(line));
-    ordered.emplace_back(box.y, std::move(b));
+    b.box = row.box;
+    b.lines.push_back(std::move(row));
+    ordered.emplace_back(b.box.y, std::move(b));
   }
 
   // 7. Tables, cell by cell.

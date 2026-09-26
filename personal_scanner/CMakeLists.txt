@@ -30,6 +30,7 @@ endif()
 
 add_library(ps_core STATIC
   core/src/engine.cpp
+  core/src/import_permit.cpp
   core/src/imaging.cpp
   core/src/tables.cpp
   core/src/text.cpp)
@@ -44,3 +45,8 @@ if(PS_BUILD_TOOLS)
   add_executable(ps_ocr tools/ps_ocr.cpp)
   target_link_libraries(ps_ocr PRIVATE ps_core)
 endif()
+
+enable_testing()
+add_executable(import_permit_test tests/import_permit_test.cpp)
+target_link_libraries(import_permit_test PRIVATE ps_core)
+add_test(NAME import_permit COMMAND import_permit_test)

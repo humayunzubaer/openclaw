@@ -34,6 +34,21 @@ Manus-এর ৩টা নমুনা ছবি: অক্ষর ৫৭% → �
 > এগুলো কৃত্রিম কাগজে মাপা। আসল কাগজের ফল আলাদা হবে; আসল নমুনা দিয়ে আলাদা পরীক্ষা
 > `bench/private/`-এ (git-এ যায় না) চালানো হয়।
 
+## Import Permit (BEPZA) — কাঠামোবদ্ধ তথ্য
+
+`ps_ocr --permit ছবি.jpg` Import Permit থেকে মূল ক্ষেত্র (Permit No, তারিখ, Invoice, HS কোড, পরিমাণ,
+Net Weight, FOB, LC, ব্যাংক) JSON-এ বের করে, তারপর ফর্মের নিজস্ব হিসাব দিয়ে যাচাই করে:
+
+- Permit No = "ID" + ১০ অঙ্ক, যার প্রথম ৬ অঙ্ক Permit date (ddmmyy); বারকোডের নিচের নম্বরের সাথে মিলানো
+- Invoice Value = FOB কলামের যোগফল; Net Weight-এর যোগফল = Total Net Weight
+- রেফারেন্স নম্বরের বছর Permit-এর বছরের কাছাকাছি
+
+একটামাত্র সম্ভাব্য সংশোধন থাকলে (যেমন 66,265.00 → 86,265.00) ঠিক করে দিয়ে `issues`-এ লিখে রাখে;
+একাধিক সম্ভাবনা থাকলে কিছু বদলায় না, শুধু "যাচাই প্রয়োজন" চিহ্ন দেয়।
+
+আসল ৫টা Import Permit-এ (git-এ নেই) ১২২টা মূল ক্ষেত্রের ১২১টা (৯৯.২%) সঠিক; বাকি ১টা যাচাইয়ের জন্য চিহ্নিত।
+সাধারণ Tesseract এই পাতাগুলো ঘোরাতে না পারায় ০%।
+
 ## চালানো
 
 ```bash
@@ -52,6 +67,8 @@ python3 bench/generate.py                      # benchmark তৈরি (seed-�
 python3 bench/score.py --engine raw            # সাধারণ Tesseract
 python3 bench/score.py --engine ps             # Personal Scanner
 python3 bench/score.py --engine ps --show --filter table-01   # বিস্তারিত
+python3 bench/field_score.py bench/private/ip/fields.json --extract   # আসল কাগজ (ব্যক্তিগত)
+ctest --test-dir build                          # unit test
 ```
 
 CI (`.github/workflows/personal-scanner-core.yml`) প্রতিটা পরিবর্তনে benchmark চালায়; নির্ভুলতা
@@ -74,7 +91,7 @@ bench/reference/             Manus-এর ৩টা নমুনা (সংশ�
 ## পরের ধাপ
 
 1. GitHub Actions-এ Android APK (Flutter + এই ইঞ্জিন), `tessdata_best` মডেল
-2. দাগহীন টেবিল (যেমন Import Permit) কলাম ধরে পড়া
+2. দাগহীন টেবিলের জন্য সাধারণ কলাম-বিশ্লেষণ (Import Permit-এর জন্য নির্দিষ্ট নিয়ম তৈরি)
 3. বাংলা শব্দতালিকা দিয়ে বানান সংশোধন (ঋ/খ, চন্দ্রবিন্দু, ূ/ু)
 4. সার্চ করা যায় এমন PDF (ছবির নিচে অদৃশ্য লেখা), আসল .docx, Excel
 5. মূসক-৬.৩, UD, UP ফর্মের নির্দিষ্ট ঘর ধরে পড়া
