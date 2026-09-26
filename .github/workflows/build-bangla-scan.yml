@@ -47,9 +47,11 @@ jobs:
             https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/ben.traineddata
 
       - name: Fetch Noto Sans Bengali font
+        # google/fonts ships this as a variable font (brackets need URL-encoding);
+        # confirmed via ofl/notosansbengali/METADATA.pb's filename field.
         run: |
           curl -L -f -o /tmp/app_shell/assets/fonts/NotoSansBengali-Regular.ttf \
-            https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali-Regular.ttf
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth,wght%5D.ttf"
 
       - name: Add camera permission to AndroidManifest.xml
         run: |
