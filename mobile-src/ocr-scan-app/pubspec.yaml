@@ -33,8 +33,8 @@ dependencies:
   # --- rotation বেক করা ---
   image: ^4.2.0
 
-  # --- Share ---
-  share_plus: ^10.0.0
+  # --- Share (13.x লাগে কারণ file_picker 13.x-এর win32 ^6.3.0 সাথে সঙ্ঘাতহীন) ---
+  share_plus: ^13.3.0
 
   # --- id generation ---
   uuid: ^4.4.0
