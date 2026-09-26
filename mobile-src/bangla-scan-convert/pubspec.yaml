@@ -1,0 +1,52 @@
+name: bangla_scan_convert
+description: অফলাইন Bengali স্ক্যান, OCR, ও Word/Excel/PDF export — মোবাইলের ক্যামেরা দিয়ে।
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- ক্যামেরা + auto-crop (ready-made, native কম্পাইল লাগে না) ---
+  cunning_document_scanner: ^1.2.5
+
+  # --- Bengali OCR (ready-made Tesseract wrapper) ---
+  flutter_tesseract_ocr: ^0.4.29
+
+  # --- যেকোনো ফরম্যাট ফাইল আপলোড (Word/Excel/ছবি বেছে নেওয়া) ---
+  file_picker: ^8.1.2
+
+  # --- স্টোরেজ ---
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # --- Word/Excel export (pure Dart, native লাগে না) ---
+  archive: ^3.6.1
+  xml: ^6.5.0
+
+  # --- PDF export (নতুন তৈরি) ---
+  pdf: ^3.11.1
+  image: ^4.2.0
+
+  # --- Share ---
+  share_plus: ^10.0.0
+
+  # --- State/UI helper ---
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/tessdata/ben.traineddata
+    - assets/fonts/NotoSansBengali-Regular.ttf
+  fonts:
+    - family: NotoSansBengali
+      fonts:
+        - asset: assets/fonts/NotoSansBengali-Regular.ttf
