@@ -18,7 +18,9 @@ dependencies:
   flutter_tesseract_ocr: ^0.4.29
 
   # --- যেকোনো ফরম্যাট ফাইল আপলোড (Word/Excel/ছবি বেছে নেওয়া) ---
-  file_picker: ^8.1.2
+  # 8.x-এর পাবলিশ করা AAR compileSdk 34 এর metadata, যা flutter_plugin_android_lifecycle-এর
+  # নতুন সংস্করণের compileSdk 36 প্রযোজনের সাথে সংঘর্ষ করে — তাই 13.x।
+  file_picker: ^13.1.0
 
   # --- স্টোরেজ ---
   path_provider: ^2.1.4
