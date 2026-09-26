@@ -1,0 +1,51 @@
+name: ocr_scan_app
+description: অফলাইন Bengali OCR অ্যাপ — মোবাইলের ক্যামেরা দিয়ে স্ক্যান করে সরাসরি টেক্সট বের করে, SutonnyMJ ফন্টে Word export করে।
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- ক্যামেরা + auto-crop (ready-made, native কম্পাইল লাগে না) ---
+  cunning_document_scanner: ^1.2.5
+
+  # --- Bengali OCR (ready-made Tesseract wrapper) ---
+  flutter_tesseract_ocr: ^0.4.29
+
+  # --- ছবি ফাইল আপলোড করে OCR করার জন্য ---
+  file_picker: ^8.1.2
+
+  # --- স্টোরেজ ---
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # --- OCR ফলাফল Word-এ export করার জন্য (pure Dart, native লাগে না) ---
+  archive: ^3.6.1
+  xml: ^6.5.0
+
+  # --- rotation বেক করা ---
+  image: ^4.2.0
+
+  # --- Share ---
+  share_plus: ^10.0.0
+
+  # --- id generation ---
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/tessdata/ben.traineddata
+    - assets/fonts/NotoSansBengali-Regular.ttf
+  fonts:
+    - family: NotoSansBengali
+      fonts:
+        - asset: assets/fonts/NotoSansBengali-Regular.ttf
