@@ -1,0 +1,5 @@
+# Benchmark generator/scorer. Pillow must be built with libraqm for correct
+# Bengali shaping (the manylinux wheels are; system libraqm0 must be present).
+pillow>=10
+opencv-python-headless>=4.8
+numpy>=1.24

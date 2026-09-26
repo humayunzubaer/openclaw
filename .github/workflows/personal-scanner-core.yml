@@ -1,0 +1,49 @@
+name: Personal Scanner core
+
+on:
+  push:
+    paths:
+      - 'personal_scanner/**'
+      - '.github/workflows/personal-scanner-core.yml'
+  pull_request:
+    paths:
+      - 'personal_scanner/**'
+      - '.github/workflows/personal-scanner-core.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ocr-benchmark:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: personal_scanner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenCV, Tesseract (ben + eng) and Bengali fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ libopencv-core-dev libopencv-imgproc-dev libopencv-imgcodecs-dev \
+            libtesseract-dev libleptonica-dev tesseract-ocr tesseract-ocr-ben tesseract-ocr-eng \
+            libraqm0 fonts-noto-core fonts-lohit-beng-bengali fonts-beng-extra fonts-freefont-ttf
+          pip install -r bench/requirements.txt
+
+      - name: Build core
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+
+      - name: Generate synthetic benchmark
+        run: python3 bench/generate.py
+
+      - name: Baseline (stock Tesseract)
+        run: python3 bench/score.py --engine raw
+
+      - name: Personal Scanner (regression gate)
+        run: |
+          python3 bench/score.py --engine ps --min-char 0.97 --min-num 0.93
+          python3 bench/score.py --engine ps --manifest bench/reference/manifest.json --min-char 0.93 --min-num 0.95
