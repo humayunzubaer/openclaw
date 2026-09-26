@@ -64,6 +64,52 @@ jobs:
         working-directory: /tmp/app_shell
         run: flutter pub get
 
+      - name: Patch flutter_tesseract_ocr build.gradle (upstream jcenter() removed in modern Gradle)
+        # Confirmed by downloading the actual published 0.4.31 package: its
+        # android/build.gradle declares its own buildscript{} with a jcenter()
+        # repository call. Modern Gradle (bundled with current Flutter stable)
+        # removed the jcenter() convenience method entirely, so evaluating that
+        # block throws before the file even reaches its own
+        # "apply plugin: 'com.android.library'" line - which is what then makes
+        # Kotlin's plugin application fail downstream with a confusing error.
+        # The app-level Flutter Gradle template already supplies AGP to every
+        # subproject, so this subproject only needs the library plugin applied;
+        # the buildscript{} block is dropped entirely, everything else kept.
+        run: |
+          GRADLE_FILE="$HOME/.pub-cache/hosted/pub.dev/flutter_tesseract_ocr-0.4.31/android/build.gradle"
+          test -f "$GRADLE_FILE"
+          cat > "$GRADLE_FILE" <<'GRADLE_EOF'
+          group 'io.paratoner.flutter_tesseract_ocr'
+          version '1.0'
+
+          rootProject.allprojects {
+              repositories {
+                  flatDir {
+                     dirs project(':flutter_tesseract_ocr').file('libs')
+                  }
+              }
+          }
+
+          apply plugin: 'com.android.library'
+
+          android {
+              namespace "io.paratoner.flutter_tesseract_ocr"
+              compileSdkVersion 34
+
+              defaultConfig {
+                  minSdkVersion 21
+                  testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+              }
+              lintOptions {
+                  disable 'InvalidPackage'
+              }
+          }
+          dependencies {
+              api(name: 'tesseract4android-release', ext: 'aar')
+          }
+          GRADLE_EOF
+          cat "$GRADLE_FILE"
+
       - name: Build release APK
         working-directory: /tmp/app_shell
         run: flutter build apk --release
