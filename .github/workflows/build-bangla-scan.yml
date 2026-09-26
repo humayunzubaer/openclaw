@@ -1,1 +1,74 @@
-bmFtZTogQnVpbGQgQmFuZ2xhIFNjYW4gJiBDb252ZXJ0IEFQSwoKb246CiAgcHVzaDoKICAgIGJyYW5jaGVzOiBbYmFuZ2xhLXNjYW4tYXBwLWJ1aWxkXQogICAgcGF0aHM6CiAgICAgIC0gJ21vYmlsZS1zcmMvYmFuZ2xhLXNjYW4tY29udmVydC8qKicKICAgICAgLSAnLmdpdGh1Yi93b3JrZmxvd3MvYnVpbGQtYmFuZ2xhLXNjYW4ueW1sJwogIHdvcmtmbG93X2Rpc3BhdGNoOiB7fQoKam9iczoKICBidWlsZC1hcGs6CiAgICBydW5zLW9uOiB1YnVudHUtbGF0ZXN0CiAgICBzdGVwczoKICAgICAgLSBuYW1lOiBDaGVja291dCByZXBvCiAgICAgICAgdXNlczogYWN0aW9ucy9jaGVja291dEB2NAoKICAgICAgLSBuYW1lOiBTZXQgdXAgSmF2YSAoQW5kcm9pZCBidWlsZCB0b29sY2hhaW4pCiAgICAgICAgdXNlczogYWN0aW9ucy9zZXR1cC1qYXZhQHY0CiAgICAgICAgd2l0aDoKICAgICAgICAgIGRpc3RyaWJ1dGlvbjogdGVtdXJpbgogICAgICAgICAgamF2YS12ZXJzaW9uOiAnMTcnCgogICAgICAtIG5hbWU6IFNldCB1cCBGbHV0dGVyCiAgICAgICAgdXNlczogc3Vib3NpdG8vZmx1dHRlci1hY3Rpb25AdjIKICAgICAgICB3aXRoOgogICAgICAgICAgY2hhbm5lbDogc3RhYmxlCgogICAgICAtIG5hbWU6IENyZWF0ZSBmcmVzaCBGbHV0dGVyIHByb2plY3Qgc2hlbGwKICAgICAgICAjIOCmquCni+CnsOCnrOCmruCoiiDgpqrgprDgpqvgp43gpqXgpqTgp4Eg4Kau4Kaw4Ka+4Kaw4Ka+4Kau4Ka/4Ka1IOCmoeCmluCmn+CmviBwdWJzcGVjLnlhbWwvbGliLyAg4Kaw4Ka+4Kau4Ka+ IOCkhuCmoeCmvuCmoeCoh+CmqOCmvzsg4Kau4Ka+4Kav4Kav4Ka44KaG4Kaw4Ka/4KaOIOCmquCnh+CmvuCmp+CoiuCmvOCmviBmbHV0dGVyIGNyZWF0ZSDgpqbgp43gpqjgp4Eg4Kaw4KaX4KaEIOCmqOCmvywg4Kaq4Kew4Ka+4Kaj4Ka4IHNvdXJjZSDgpqjgp43gpqXgpqYg4Kau4Kau4Kaw4Ka/IOCmuOCmvOCmviBib3AK4Kaq4Ka+4Kav4Kev4Ka44KaN4Kav4KaN4Kav4Kaw4Ka/IOCmruCmv+CmnOCoh+CmviDgpq3gprLgprLgp4EgKGZsdXR0ZXIgY3JlYXRlIC5cbiDgpqvgp43gpq/gprjgpq8g4Kaw4Ka+4KaW4Ka+IOCmr+CmvuCmqOCmviDgpq/gpr7gpqYpLgogICAgICAgIHJ1bjogfAogICAgICAgICAgZmx1dHRlciBjcmVhdGUgLS1vcmcgY29tLmJhbmdsYXNjYW4gLS1wcm9qZWN0LW5hbWUgYmFuZ2xhX3NjYW5fY29udmVydCAvdG1wL2FwcF9zaGVsbAoKICAgICAgLSBuYW1lOiBDb3B5IG91ciBzb3VyY2Ugb3ZlciB0aGUgc2hlbGwKICAgICAgICBydW46IHwKICAgICAgICAgIFNSQz1tb2JpbGUtc3JjL2JhbmdsYS1zY2FuLWNvbnZlcnQKICAgICAgICAgIERTVD0vdG1wL2FwcF9zaGVsbAogICAgICAgICAgY3AgLXIgIiRTUkMvbGliIiAiJERTVC8iCiAgICAgICAgICBjcCAiJFNSQy9wdWJzcGVjLnlhbWwiICIkRFNUL3B1YnNwZWMueWFtbCIKICAgICAgICAgIG1rZGlyIC1wICIkRFNUL2Fzc2V0cy90ZXNzZGF0YSIgIiREU1QvYXNzZXRzL2ZvbnRzIgoKICAgICAgLSBuYW1lOiBGZXRjaCBCZW5nYWxpIFRlc3NlcmFjdCB0cmFpbmVkIGRhdGEgKGJlbi50cmFpbmVkZGF0YSkKICAgICAgICBydW46IHwKICAgICAgICAgIGN1cmwgLUwgLWYgLW8gL3RtcC9hcHBfc2hlbGwvYXNzZXRzL3Rlc3NkYXRhL2Jlbi50cmFpbmVkZGF0YSBcCiAgICAgICAgICAgIGh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS90ZXNzZXJhY3Qtb2NyL3Rlc3NkYXRhX2Zhc3QvbWFpbi9iZW4udHJhaW5lZGRhdGEKCiAgICAgIC0gbmFtZTogRmV0Y2ggTm90byBTYW5zIEJlbmdhbGkgZm9udAogICAgICAgIHJ1bjogfAogICAgICAgICAgY3VybCAtTCAtZiAtbyAvdG1wL2FwcF9zaGVsbC9hc3NldHMvZm9udHMvTm90b1NhbnNCZW5nYWxpLVJlZ3VsYXIudHRmIFwKICAgICAgICAgICAgaHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2dvb2dsZS9mb250cy9tYWluL29mbC9ub3Rvc2Fuc2JlbmdhbGkvTm90b1NhbnNCZW5nYWxpLVJlZ3VsYXIudHRmCgogICAgICAtIG5hbWU6IEFkZCBjYW1lcmEgcGVybWlzc2lvbiB0byBBbmRyb2lkTWFuaWZlc3QueG1sCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBNQU5JRkVTVD0vdG1wL2FwcF9zaGVsbC9hbmRyb2lkL2FwcC9zcmMvbWFpbi9BbmRyb2lkTWFuaWZlc3QueG1sCiAgICAgICAgICBncmVwIC1xICdhbmRyb2lkLnBlcm1pc3Npb24uQ0FNRVJBJyAiJE1BTklGRVNUIiB8fCBcCiAgICAgICAgICAgIHNlZCAtaSAncy8gPGFwcGxpY2F0aW9uL1x1MDAzY3VzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5DQU1FUkEiXHUwMDNlXG4gICAgXHUwMDNjYXBwbGljYXRpb24vLycgIiRNQU5JRkVTVCIKICAgICAgICAgIGNhdCAiJE1BTklGRVNUIgoKICAgICAgLSBuYW1lOiBmbHV0dGVyIHB1YiBnZXQKICAgICAgICB3b3JraW5nLWRpcmVjdG9yeTogL3RtcC9hcHBfc2hlbGwKICAgICAgICBydW46IGZsdXR0ZXIgcHViIGdldAoKICAgICAgLSBuYW1lOiBCdWlsZCByZWxlYXNlIEFQSwogICAgICAgIHdvcmtpbmctZGlyZWN0b3J5OiAvdG1wL2FwcF9zaGVsbAogICAgICAgIHJ1bjogZmx1dHRlciBidWlsZCBhcGsgLS1yZWxlYXNlCgogICAgICAtIG5hbWU6IFVwbG9hZCBBUEsgYXJ0aWZhY3QKICAgICAgICB1c2VzOiBhY3Rpb25zL3VwbG9hZC1hcnRpZmFjdEB2NAogICAgICAgIHdpdGg6CiAgICAgICAgICBuYW1lOiBiYW5nbGEtc2Nhbi1jb252ZXJ0LWFwawogICAgICAgICAgcGF0aDogL3RtcC9hcHBfc2hlbGwvYnVpbGQvYXBwL291dHB1dHMvZmx1dHRlci1hcGsvYXBwLXJlbGVhc2UuYXBrCiAgICAgICAgICBpZi1uby1maWxlcy1mb3VuZDogZXJyb3IK
+name: Build Bangla Scan & Convert APK
+
+on:
+  push:
+    branches: [bangla-scan-app-build]
+    paths:
+      - 'mobile-src/bangla-scan-convert/**'
+      - '.github/workflows/build-bangla-scan.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java (Android build toolchain)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create fresh Flutter project shell
+        # Never run flutter create on top of our own source dir - it can silently
+        # overwrite our custom pubspec.yaml/lib/. Instead create a throwaway shell
+        # project elsewhere, then copy our source on top of it in the next step.
+        run: |
+          flutter create --org com.banglascan --project-name bangla_scan_convert /tmp/app_shell
+
+      - name: Copy our source over the shell
+        run: |
+          SRC=mobile-src/bangla-scan-convert
+          DST=/tmp/app_shell
+          cp -r "$SRC/lib" "$DST/"
+          cp "$SRC/pubspec.yaml" "$DST/pubspec.yaml"
+          mkdir -p "$DST/assets/tessdata" "$DST/assets/fonts"
+
+      - name: Fetch Bengali Tesseract trained data (ben.traineddata)
+        run: |
+          curl -L -f -o /tmp/app_shell/assets/tessdata/ben.traineddata \
+            https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/ben.traineddata
+
+      - name: Fetch Noto Sans Bengali font
+        run: |
+          curl -L -f -o /tmp/app_shell/assets/fonts/NotoSansBengali-Regular.ttf \
+            https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali-Regular.ttf
+
+      - name: Add camera permission to AndroidManifest.xml
+        run: |
+          MANIFEST=/tmp/app_shell/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$MANIFEST" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA"/>\n    <application#' "$MANIFEST"
+          cat "$MANIFEST"
+
+      - name: flutter pub get
+        working-directory: /tmp/app_shell
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: /tmp/app_shell
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bangla-scan-convert-apk
+          path: /tmp/app_shell/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
