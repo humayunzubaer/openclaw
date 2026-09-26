@@ -12,10 +12,6 @@ flutter create --org ai.openclaw openclaw_scanner
 flutter pub get
 ```
 
-অ্যাপের নাম (launcher-এ যা দেখাবে) **OCR Manus** করতে:
-- Android: `android/app/src/main/AndroidManifest.xml`-এ `android:label="OCR Manus"`
-- iOS: `ios/Runner/Info.plist`-এ `CFBundleDisplayName` = `OCR Manus`
-
 ## ২. Third-party native libs (আপনাকে জোগাড় করতে হবে)
 `native/third_party/`-তে রাখুন:
 - opencv (Android SDK) — `opencv/sdk/native/jni`

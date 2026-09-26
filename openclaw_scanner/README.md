@@ -1,8 +1,6 @@
-# OCR Manus — Offline-First Bengali Document Scanner
+# OpenClaw Scanner — Offline-First Bengali Document Scanner
 
 Flutter + C++ (OpenCV / Tesseract / ONNX) দিয়ে তৈরি একটি offline scanner অ্যাপ।
-
-> Manus-এর মাধ্যমে তৈরি OCR অ্যাপ। অ্যাপের নাম: **OCR Manus**।
 
 ## এই bundle-এ কী আছে (batch অনুযায়ী)
 

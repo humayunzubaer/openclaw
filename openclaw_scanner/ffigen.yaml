@@ -1,6 +1,6 @@
 # Generate: dart run ffigen --config ffigen.yaml
 name: ScannerCoreBindings
-description: Dart FFI bindings for the OCR Manus native core.
+description: Dart FFI bindings for the OpenClaw scanner native core.
 output: 'lib/native/scanner_core_bindings.g.dart'
 
 headers:
