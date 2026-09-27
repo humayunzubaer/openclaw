@@ -93,12 +93,18 @@ bool mixesScripts(const std::string& s) {
 }
 
 // A narrow cell wraps "100302" as "10030" / "2" and "13.04.2023" as
-// "13.04.202" / "3": join such lines without a space.
-bool continuesNumber(const std::string& before, const std::string& next) {
+// "13.04.202" / "3": join such lines without a space. But a cell may also
+// hold two separate numbers on two lines (quantity over value: "১৪১.৬০" /
+// "৩,৭৯৫.৭৭"), so only join when the first line is visibly unfinished: it
+// ends in "." or "/", it ran to the cell edge, or the tail is just a digit
+// or two.
+bool continuesNumber(const std::string& before, const std::string& next, bool reachedEdge) {
   const auto a = text::decode(before), b = text::decode(next);
   if (a.empty() || b.empty() || !text::isDigit(b.front())) return false;
   const char32_t last = a.back();
-  return text::isDigit(last) || last == U'.' || last == U'/';
+  if (last == U'.' || last == U'/') return true;
+  if (!text::isDigit(last)) return false;
+  return reachedEdge || b.size() <= 2;
 }
 
 // Bounding box of the ink, ignoring specks (rule-crossing remnants, dust)
@@ -293,17 +299,21 @@ struct Engine::Impl {
     std::string joined;
     float confSum = 0;
     int count = 0;
+    bool prevReachedEdge = false;
     for (auto& words : ocrLines(crop, psm)) {
       std::string lineText;
+      int right = 0;
       for (auto& best : refineLine(crop, words)) {
         if (!lineText.empty()) lineText += ' ';
         lineText += best.text;
         confSum += best.conf;
+        right = std::max(right, best.box.x + best.box.width);
         ++count;
       }
       if (lineText.empty()) continue;
-      if (!joined.empty() && !continuesNumber(joined, lineText)) joined += ' ';
+      if (!joined.empty() && !continuesNumber(joined, lineText, prevReachedEdge)) joined += ' ';
       joined += lineText;
+      prevReachedEdge = right >= crop.cols - kPad - 0.15 * (crop.cols - 2 * kPad);
     }
     return {joined, count ? confSum / count : 0.0f};
   }
@@ -401,7 +411,7 @@ struct Engine::Impl {
       for (std::string line; std::getline(lines, line);) {
         line = text::trim(line);
         if (line.empty()) continue;
-        if (!joined.empty() && !continuesNumber(joined, line)) joined += ' ';
+        if (!joined.empty() && !continuesNumber(joined, line, false)) joined += ' ';
         joined += line;
       }
       block.text = joined;
