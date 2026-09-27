@@ -61,22 +61,56 @@ std::string jsonEscape(const std::string& s) {
 }
 
 // Tokens made only of these are rule fragments, not text.
+// Shaded (halftone) table rows and rule fragments read as runs of dashes and
+// symbols. A lone "-" is kept: tables use it for "nil".
 bool isJunkToken(const std::string& s) {
-  for (char32_t c : text::decode(s)) {
-    if (!(c == U'|' || c == U'<' || c == U'>' || c == U'[' || c == U']' || c == U'{' || c == U'}' ||
-          c == U'_' || c == U'~' || c == U'`' || c == U'\\')) return false;
+  const auto u = text::decode(s);
+  if (u == U"-") return false;
+  for (char32_t c : u) {
+    if (c > 0x7F && c != U'\u2014' && c != U'\u2013' && c != U'\u2018' && c != U'\u2019' && c != U'\u201C' &&
+        c != U'\u201D')
+      return false;
+    if (c < 0x80 && std::isalnum(static_cast<int>(c))) return false;
   }
-  return true;
+  return !u.empty();
+}
+
+bool hasBengali(const std::string& s) {
+  for (char32_t c : text::decode(s))
+    if (c >= 0x0980 && c <= 0x09FF) return true;
+  return false;
+}
+
+// Bengali and Latin letters in one short cell ("৪১০৫ BOARD") mean one of the
+// words was read by the wrong model.
+bool mixesScripts(const std::string& s) {
+  bool bengali = false, latin = false;
+  for (char32_t c : text::decode(s)) {
+    if (c >= 0x0980 && c <= 0x09FF) bengali = true;
+    else if ((c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z')) latin = true;
+  }
+  return bengali && latin;
+}
+
+// A narrow cell wraps "100302" as "10030" / "2" and "13.04.2023" as
+// "13.04.202" / "3": join such lines without a space.
+bool continuesNumber(const std::string& before, const std::string& next) {
+  const auto a = text::decode(before), b = text::decode(next);
+  if (a.empty() || b.empty() || !text::isDigit(b.front())) return false;
+  const char32_t last = a.back();
+  return text::isDigit(last) || last == U'.' || last == U'/';
 }
 
 // Bounding box of the ink, ignoring specks (rule-crossing remnants, dust)
 // that would otherwise stretch the crop to the cell corners.
-cv::Rect inkBounds(const cv::Mat& ink, double minArea) {
+cv::Rect inkBounds(const cv::Mat& ink, double minArea, double minHeight) {
   cv::Mat labels, stats, centroids;
   const int n = cv::connectedComponentsWithStats(ink, labels, stats, centroids, 8);
   cv::Rect box;
   for (int i = 1; i < n; ++i) {
     if (stats.at<int>(i, cv::CC_STAT_AREA) < minArea) continue;
+    // Halftone shading and dust are small dots; glyph parts are taller.
+    if (stats.at<int>(i, cv::CC_STAT_HEIGHT) < minHeight && stats.at<int>(i, cv::CC_STAT_WIDTH) < minHeight) continue;
     const cv::Rect r(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP),
                      stats.at<int>(i, cv::CC_STAT_WIDTH), stats.at<int>(i, cv::CC_STAT_HEIGHT));
     box = box.area() ? (box | r) : r;
@@ -253,6 +287,27 @@ struct Engine::Impl {
     return lines;
   }
 
+  // OCR of one table cell: lines joined, numbers wrapped by the narrow cell
+  // re-joined. Returns text and mean word confidence.
+  std::pair<std::string, float> readCell(const cv::Mat& crop, tesseract::PageSegMode psm) {
+    std::string joined;
+    float confSum = 0;
+    int count = 0;
+    for (auto& words : ocrLines(crop, psm)) {
+      std::string lineText;
+      for (auto& best : refineLine(crop, words)) {
+        if (!lineText.empty()) lineText += ' ';
+        lineText += best.text;
+        confSum += best.conf;
+        ++count;
+      }
+      if (lineText.empty()) continue;
+      if (!joined.empty() && !continuesNumber(joined, lineText)) joined += ' ';
+      joined += lineText;
+    }
+    return {joined, count ? confSum / count : 0.0f};
+  }
+
   // Refines one recognized line: English runs first, then number re-reads.
   std::vector<Word> refineLine(const cv::Mat& gray, const std::vector<Word>& words) {
     std::vector<Word> out;
@@ -290,18 +345,44 @@ struct Engine::Impl {
   // allowed, in the word's own digit script. Returns the better read.
   Word rereadNumber(const cv::Mat& gray, const Word& first) {
     const auto prof = text::profile(first.text);
+    // "500$2.5", "5O0.00": mostly digits with a look-alike symbol inside.
+    // The Latin model's classic confusions map back deterministically.
+    const bool nearlyNumber = prof.digits() >= 3 && prof.other <= 1 && prof.digits() >= 3 * prof.other;
+    if (nearlyNumber && !prof.numberLike()) {
+      std::string fixed;
+      bool ok = true;
+      for (char c : first.text) {
+        switch (c) {
+          case '$': case 'S': fixed += '5'; break;
+          case 'O': case 'o': fixed += '0'; break;
+          case 'l': case 'I': case '|': fixed += '1'; break;
+          default:
+            if (static_cast<unsigned char>(c) >= 0x80 || std::isalpha(static_cast<unsigned char>(c))) ok = false;
+            fixed += c;
+        }
+      }
+      if (ok && text::profile(fixed).numberLike()) {
+        Word w = first;
+        w.text = fixed;
+        return w;
+      }
+    }
     if (!opt.numericRereads || !prof.numberLike()) return first;
     const cv::Mat crop = cropWord(gray, first.box);
     if (crop.empty()) return first;
     // Bengali ৪ looks like Latin 8, ৭ like 9, ০ like 0: read the box in both
     // digit scripts and keep the more confident, preferring the first read's
     // script on near-ties.
-    const bool preferBengali = prof.bengali >= prof.latin;
+    // On an English page Bengali digits are not expected; do not offer them.
+    const bool latinPage = primary == &latin;
+    const bool preferBengali = !latinPage && prof.bengali >= prof.latin;
     Word best = first;
     for (bool bengali : {preferBengali, !preferBengali}) {
+      if (latinPage && bengali) continue;
       const Word w = readDigits(crop, bengali, tesseract::PSM_SINGLE_WORD, first);
       if (w.text.empty() || w.text.find(' ') != std::string::npos) continue;
       const float margin = bengali == preferBengali ? 0.0f : 5.0f;
+      if (std::getenv("PS_TRACE")) std::fprintf(stderr, "num: '%s' %.0f -> '%s' %.0f (%s)\n", first.text.c_str(), first.conf, w.text.c_str(), w.conf, bengali ? "bn" : "latin");
       if (w.conf >= best.conf + margin) best = w;
     }
     return best;
@@ -310,8 +391,22 @@ struct Engine::Impl {
   // Forces a digits-only read of a whole cell (column known to be numeric).
   std::optional<Word> readCellAsNumber(const cv::Mat& crop, bool bengali) {
     if (!opt.numericRereads) return std::nullopt;
-    // Single-word mode: single-line mode drops lone glyphs like "২".
-    const Word w = readDigits(crop, bengali, tesseract::PSM_SINGLE_WORD, Word{});
+    // Single-word mode: single-line mode drops lone glyphs like "২". A
+    // number wrapped over two lines in a narrow cell needs block mode.
+    Word w = readDigits(crop, bengali, tesseract::PSM_SINGLE_WORD, Word{});
+    if (w.text.empty() || w.text.find(' ') != std::string::npos) {
+      Word block = readDigits(crop, bengali, tesseract::PSM_SINGLE_BLOCK, Word{});
+      std::string joined;
+      std::istringstream lines(block.text);
+      for (std::string line; std::getline(lines, line);) {
+        line = text::trim(line);
+        if (line.empty()) continue;
+        if (!joined.empty() && !continuesNumber(joined, line)) joined += ' ';
+        joined += line;
+      }
+      block.text = joined;
+      w = block;
+    }
     if (std::getenv("PS_TRACE")) std::fprintf(stderr, "cell-as-number: '%s' %.0f\n", w.text.c_str(), w.conf);
     if (w.text.empty() || !text::profile(w.text).numberLike() || w.conf < 40) return std::nullopt;
     return w;
@@ -339,10 +434,36 @@ struct Engine::Impl {
         }
       }
       if (numeric < 2 || numeric < 0.5 * voters) continue;
+      // Typical length of a number in this column.
+      std::vector<int> lengths;
+      for (auto& cell : table.cells)
+        if (cell.col == c && text::profile(cell.text).numberLike()) lengths.push_back(text::profile(cell.text).digits());
+      std::nth_element(lengths.begin(), lengths.begin() + lengths.size() / 2, lengths.end());
+      const int typical = lengths[lengths.size() / 2];
       for (size_t k = 0; k < table.cells.size(); ++k) {
         Cell& cell = table.cells[k];
         if (cell.col != c || cell.text.empty() || crops[k].empty()) continue;
-        if (text::profile(cell.text).numberLike() || text::decode(cell.text).size() > 3) continue;
+        auto prof = text::profile(cell.text);
+      if (prof.numberLike()) {
+        // "15 1461.97": a gap inside a number is a wrap or spacing artifact.
+        std::string joined;
+        for (char ch : cell.text)
+          if (ch != ' ') joined += ch;
+        cell.text = joined;
+        // Far shorter than its neighbours and not confident: likely garbled
+        // ("২2" for 246509.03).
+        const bool stunted = prof.digits() * 2 < typical && cell.confidence < 80;
+        if (!stunted) continue;
+        prof = text::profile(cell.text);
+      }
+      // Short misreads ("ঙ" for ৬) and weak reads that are at least half
+      // digits ("8@Go00") get a digits-only read.
+      const bool shortRead = text::decode(cell.text).size() <= 3;
+      const bool weakNumeric = cell.confidence < 70 && 2 * prof.digits() >= prof.total();
+      // "246625.8 ও": a number whose wrapped last digit was read as a letter.
+      const bool nearlyNumber = prof.digits() >= 3 && prof.other <= 2 && prof.digits() >= 3 * prof.other;
+      const bool stuntedNumber = prof.numberLike();  // reached only when stunted
+      if (!shortRead && !weakNumeric && !nearlyNumber && !stuntedNumber) continue;
         if (auto w = readCellAsNumber(crops[k], bengali >= latin)) {
           cell.text = trimNumberTail(w->text);
           cell.confidence = w->conf;
@@ -422,6 +543,8 @@ Page Engine::recognize(const cv::Mat& image) {
     page.script = latinPage ? "latin" : "bengali";
   }
 
+  flat = imaging::invertDarkRegions(flat);
+
   // 3. Deskew.
   page.skewDegrees = imaging::estimateSkew(imaging::binarize(flat), 15.0);
   flat = imaging::rotate(flat, page.skewDegrees, 255);
@@ -444,6 +567,7 @@ Page Engine::recognize(const cv::Mat& image) {
   const int minH = std::max(ink.cols / 8, static_cast<int>(12 * th));
   const int minV = std::max(30, static_cast<int>(2.5 * th));
   const cv::Mat rules = imaging::rulingLines(ink, minH, minV);
+  I.dump("rules", rules);
   cv::Mat clean = flat.clone();
   clean.setTo(255, rules);
   I.dump("clean", clean);
@@ -492,6 +616,73 @@ Page Engine::recognize(const cv::Mat& image) {
     line.confidence = confSum / refined.size();
     pieces.push_back(std::move(line));
   }
+  // Recovery pass: page layout analysis sometimes drops real text as
+  // "image" (next to a signature stroke, stamps, curled edges). Read any
+  // line-shaped ink that no recognized word covers.
+  {
+    cv::Mat covered = cv::Mat::zeros(running.size(), CV_8U);
+    for (auto& l : pieces) cv::rectangle(covered, l.box, 255, cv::FILLED);
+    for (auto& t : found) cv::rectangle(covered, t.box, 255, cv::FILLED);
+    cv::dilate(covered, covered, cv::getStructuringElement(cv::MORPH_RECT, {7, 7}));
+    cv::Mat rest = imaging::binarize(running) & ~covered;
+    cv::Mat blobs;
+    const int kw = std::max(3, static_cast<int>(1.2 * th)), kh = std::max(1, static_cast<int>(0.25 * th));
+    cv::dilate(rest, blobs, cv::getStructuringElement(cv::MORPH_RECT, {kw, kh}));
+    cv::Mat labels, stats, centroids;
+    const int n = cv::connectedComponentsWithStats(blobs, labels, stats, centroids, 8);
+    for (int i = 1; i < n; ++i) {
+      const cv::Rect r(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP),
+                       stats.at<int>(i, cv::CC_STAT_WIDTH), stats.at<int>(i, cv::CC_STAT_HEIGHT));
+      if (r.height < 0.6 * th || r.height > 3.0 * th || r.width < 1.5 * th) continue;
+      // Only wholly missed text; partly covered blobs are pieces of words
+      // already read.
+      if (cv::countNonZero(covered(r)) > 0.1 * r.area()) continue;
+      const cv::Rect g = cv::Rect(r.x - 4, r.y - 4, r.width + 8, r.height + 8) & cv::Rect(0, 0, running.cols, running.rows);
+      // Headings well above body size are often why layout analysis skipped
+      // them, and the model misreads large text. Try a few scales toward body
+      // size and keep the most confident read.
+      std::vector<Word> bestWords;
+      double bestShrink = 1.0;
+      for (double target : {1.0, 1.4, 0.0}) {
+        const double shrink = target > 0 ? std::min(1.0, target * th / r.height) : 1.0;
+        cv::Mat region = running(g);
+        if (shrink < 0.95) cv::resize(region, region, {}, shrink, shrink, cv::INTER_AREA);
+        const cv::Mat crop = padWhite(region, kPad);
+        auto lines = I.ocrLines(crop, tesseract::PSM_SINGLE_LINE);
+        if (lines.empty()) lines = I.ocrLines(crop, tesseract::PSM_SINGLE_BLOCK);
+        std::vector<Word> words;
+        for (auto& l : lines)
+          for (auto& w : I.refineLine(crop, l)) words.push_back(w);
+        if (!words.empty() && meanConf(words) > meanConf(bestWords)) {
+          bestWords = std::move(words);
+          bestShrink = shrink;
+        }
+        if (shrink >= 0.95) break;  // further targets would not change the scale
+      }
+      if (!bestWords.empty() && meanConf(bestWords) >= 60) {
+        Line line;
+        line.box = bestWords.front().box;
+        for (auto& w : bestWords) {
+          if (!line.text.empty()) line.text += ' ';
+          line.text += w.text;
+          line.box |= w.box;
+        }
+        line.confidence = meanConf(bestWords);
+        int alnum = 0;
+        for (char32_t c : text::decode(line.text)) alnum += c > 0x7F || std::isalnum(static_cast<int>(c));
+        if (alnum < 3 || isNoise(line.text)) continue;  // bullets, letter fragments
+        line.box -= cv::Point(kPad, kPad);
+        if (bestShrink < 0.95) {
+          line.box = cv::Rect(static_cast<int>(line.box.x / bestShrink), static_cast<int>(line.box.y / bestShrink),
+                              static_cast<int>(line.box.width / bestShrink), static_cast<int>(line.box.height / bestShrink));
+        }
+        line.box += g.tl();
+        if (std::getenv("PS_TRACE")) std::fprintf(stderr, "recovered: '%s' %.0f\n", line.text.c_str(), line.confidence);
+        pieces.push_back(std::move(line));
+      }
+    }
+  }
+
   std::vector<std::pair<int, Block>> ordered;
   for (auto& row : mergeVisualRows(std::move(pieces))) {
     Block b;
@@ -514,40 +705,48 @@ Page Engine::recognize(const cv::Mat& image) {
       cv::Rect inner = dc.box;
       inner.x += 3; inner.y += 3; inner.width -= 6; inner.height -= 6;
       inner &= cv::Rect(0, 0, clean.cols, clean.rows);
-      if (inner.area() <= 0 || cv::countNonZero(textInk(inner)) < 0.15 * th * th) {
+      const cv::Rect content = inner.area() > 0 ? inkBounds(textInk(inner), 0.03 * th * th, 0.35 * th) + inner.tl() : cv::Rect();
+      if (content.area() <= 0 || cv::countNonZero(textInk(content)) < 0.15 * th * th) {
         b.cells.push_back(cell);
         crops.emplace_back();
         continue;
       }
       // Crop to the ink inside the cell: less blank area, fewer rule remnants,
       // and the line count follows the content, not the cell size.
-      const cv::Rect content = inkBounds(textInk(inner), 0.03 * th * th) + inner.tl();
-      if (content.area() <= 0) {
-        b.cells.push_back(cell);
-        crops.emplace_back();
-        continue;
-      }
       const cv::Rect snug = cv::Rect(content.x - 6, content.y - 6, content.width + 12, content.height + 12) & inner;
       const cv::Mat crop = padWhite(clean(snug), kPad);
       const bool multiLine = content.height > 1.8 * th;
       const auto psm = multiLine ? tesseract::PSM_SINGLE_BLOCK : tesseract::PSM_SINGLE_LINE;
-      std::string joined;
-      float confSum = 0;
-      int count = 0;
-      for (auto& words : I.ocrLines(crop, psm)) {
-        if (!joined.empty()) joined += ' ';
-        std::string lineText;
-        for (auto& best : I.refineLine(crop, words)) {
-          if (!lineText.empty()) lineText += ' ';
-          lineText += best.text;
-          confSum += best.conf;
-          ++count;
+      auto [joined, conf] = I.readCell(crop, psm);
+      // Single-line mode occasionally returns nothing for a short bold word
+      // ("ক্রম"); block mode reads it. Try the other mode on weak reads.
+      if (conf < 60) {
+        const auto other = psm == tesseract::PSM_SINGLE_LINE ? tesseract::PSM_SINGLE_BLOCK : tesseract::PSM_SINGLE_LINE;
+        auto [t2, c2] = I.readCell(crop, other);
+        if (c2 > conf) {
+          joined = t2;
+          conf = c2;
         }
-        joined += lineText;
+      }
+      // Mixed-script tables (Bengali headers, English/number cells): a weak
+      // read gets a second opinion from the other model.
+      // A confident-enough Bengali read (letters or digits) is not handed to
+      // the English model, which renders Bengali glyphs as look-alike Latin.
+      const bool bengaliRead = hasBengali(joined) && !mixesScripts(joined) && conf >= 50;
+      if ((conf < 75 || mixesScripts(joined)) && !bengaliRead && I.hasLatin) {
+        tesseract::TessBaseAPI* saved = I.primary;
+        I.primary = saved == &I.main ? &I.latin : &I.main;
+        auto [otherText, otherConf] = I.readCell(crop, psm);
+        I.primary = saved;
+        if (std::getenv("PS_TRACE")) std::fprintf(stderr, "cell 2nd: '%s' %.0f -> '%s' %.0f\n", joined.c_str(), conf, otherText.c_str(), otherConf);
+        if (otherConf > conf + 5) {
+          joined = otherText;
+          conf = otherConf;
+        }
       }
       if (!isNoise(joined)) {
         cell.text = trimNumberTail(joined);
-        cell.confidence = count ? confSum / count : 0;
+        cell.confidence = conf;
       }
       b.cells.push_back(cell);
       crops.push_back(crop);

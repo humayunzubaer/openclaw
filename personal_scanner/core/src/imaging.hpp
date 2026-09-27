@@ -22,6 +22,10 @@ cv::Mat warpPage(const cv::Mat& image, const std::vector<cv::Point2f>& quad);
 // background so paper becomes ~white and ink keeps its contrast.
 cv::Mat flattenIllumination(const cv::Mat& gray);
 
+// Reverse-printed areas (white text on a dark band, common in table
+// headers) are inverted to dark-on-light so OCR and rule finding see text.
+cv::Mat invertDarkRegions(const cv::Mat& flat);
+
 // Ink mask (255 = ink) from a flattened page.
 cv::Mat binarize(const cv::Mat& flat);
 

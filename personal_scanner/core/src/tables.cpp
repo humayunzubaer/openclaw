@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include <opencv2/imgproc.hpp>
 
@@ -9,23 +10,61 @@ namespace ps::tables {
 
 namespace {
 
-// Groups 1-D values into clusters no wider than `tol`; returns the index of
-// each value's cluster, clusters ordered by position.
-std::vector<int> cluster(const std::vector<double>& values, double tol) {
-  std::vector<int> order(values.size());
-  for (size_t i = 0; i < order.size(); ++i) order[i] = static_cast<int>(i);
-  std::sort(order.begin(), order.end(), [&](int a, int b) { return values[a] < values[b]; });
-  std::vector<int> label(values.size(), 0);
-  int current = -1;
-  double anchor = -1e18;
-  for (int idx : order) {
-    if (values[idx] - anchor > tol) {
-      ++current;
-      anchor = values[idx];
-    }
-    label[idx] = current;
+struct UnionFind {
+  std::vector<int> parent;
+  explicit UnionFind(size_t n) : parent(n) {
+    for (size_t i = 0; i < n; ++i) parent[i] = static_cast<int>(i);
   }
-  return label;
+  int find(int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); }
+  void join(int a, int b) { parent[find(a)] = find(b); }
+};
+
+double overlap(int a0, int a1, int b0, int b1) { return std::max(0, std::min(a1, b1) - std::max(a0, b0)); }
+
+// Rows and columns follow the grid's topology, not global coordinates: two
+// cells share a row when they sit side by side across one rule and their
+// heights mostly overlap. This follows rows along a curled page, where a
+// global y-sort would chain neighbouring rows together.
+void assignRowsAndColumns(DetectedTable& table, double textHeight) {
+  auto& cells = table.cells;
+  const size_t n = cells.size();
+  const int gap = static_cast<int>(std::max(12.0, 1.2 * textHeight));
+  UnionFind rows(n), cols(n);
+  for (size_t i = 0; i < n; ++i) {
+    const cv::Rect& a = cells[i].box;
+    for (size_t j = i + 1; j < n; ++j) {
+      const cv::Rect& b = cells[j].box;
+      const double v = overlap(a.y, a.y + a.height, b.y, b.y + b.height);
+      const double h = overlap(a.x, a.x + a.width, b.x, b.x + b.width);
+      const bool sideBySide = std::abs(b.x - (a.x + a.width)) <= gap || std::abs(a.x - (b.x + b.width)) <= gap;
+      const bool stacked = std::abs(b.y - (a.y + a.height)) <= gap || std::abs(a.y - (b.y + b.height)) <= gap;
+      if (sideBySide && v >= 0.6 * std::max(a.height, b.height)) rows.join(static_cast<int>(i), static_cast<int>(j));
+      if (stacked && h >= 0.6 * std::max(a.width, b.width)) cols.join(static_cast<int>(i), static_cast<int>(j));
+    }
+  }
+  // Number groups by their mean position.
+  auto number = [&](UnionFind& uf, bool vertical, int& count) {
+    std::map<int, std::pair<double, int>> acc;  // root -> (sum of centers, count)
+    for (size_t i = 0; i < n; ++i) {
+      const cv::Rect& r = cells[i].box;
+      auto& e = acc[uf.find(static_cast<int>(i))];
+      e.first += vertical ? r.y + r.height / 2.0 : r.x + r.width / 2.0;
+      e.second += 1;
+    }
+    std::vector<std::pair<double, int>> order;
+    for (auto& [root, e] : acc) order.emplace_back(e.first / e.second, root);
+    std::sort(order.begin(), order.end());
+    std::map<int, int> index;
+    for (size_t k = 0; k < order.size(); ++k) index[order[k].second] = static_cast<int>(k);
+    count = static_cast<int>(order.size());
+    return index;
+  };
+  const auto rowIndex = number(rows, true, table.rows);
+  const auto colIndex = number(cols, false, table.cols);
+  for (size_t i = 0; i < n; ++i) {
+    cells[i].row = rowIndex.at(rows.find(static_cast<int>(i)));
+    cells[i].col = colIndex.at(cols.find(static_cast<int>(i)));
+  }
 }
 
 }  // namespace
@@ -55,29 +94,19 @@ std::vector<DetectedTable> detect(const cv::Mat& lines, double textHeight) {
       const bool touchesEdge = x == 0 || y == 0 || x + w >= grid.width || y + h >= grid.height;
       if (touchesEdge || w < minCell || h < minCell) continue;
       // Enclosed but mostly empty of its bounding box => not a rectangular cell.
-      if (hs.at<int>(k, cv::CC_STAT_AREA) < 0.6 * w * h) continue;
+      if (hs.at<int>(k, cv::CC_STAT_AREA) < 0.5 * w * h) continue;
       table.cells.push_back({cv::Rect(x + grid.x, y + grid.y, w, h), 0, 0});
     }
     // A single enclosed box is a framed paragraph, not a table: leave it to
     // the running-text pass.
     if (table.cells.size() < 2) continue;
+    // A frame with a small box inside (an ID card with its photo slot) is
+    // not a table: real grids are mostly made of cells.
+    double cellArea = 0;
+    for (auto& c : table.cells) cellArea += c.box.area();
+    if (cellArea < 0.5 * grid.area()) continue;
 
-    std::vector<double> ys, xs;
-    double minH = 1e9, minW = 1e9;
-    for (auto& c : table.cells) {
-      ys.push_back(c.box.y);
-      xs.push_back(c.box.x);
-      minH = std::min<double>(minH, c.box.height);
-      minW = std::min<double>(minW, c.box.width);
-    }
-    const auto rowOf = cluster(ys, 0.5 * minH);
-    const auto colOf = cluster(xs, std::max(6.0, 0.3 * minW));
-    for (size_t k = 0; k < table.cells.size(); ++k) {
-      table.cells[k].row = rowOf[k];
-      table.cells[k].col = colOf[k];
-      table.rows = std::max(table.rows, rowOf[k] + 1);
-      table.cols = std::max(table.cols, colOf[k] + 1);
-    }
+    assignRowsAndColumns(table, textHeight);
     std::sort(table.cells.begin(), table.cells.end(),
               [](auto& a, auto& b) { return a.row != b.row ? a.row < b.row : a.col < b.col; });
     tables.push_back(std::move(table));

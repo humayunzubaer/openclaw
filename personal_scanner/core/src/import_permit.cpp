@@ -165,11 +165,14 @@ ImportPermit extract(const std::string& raw) {
   const std::regex itemRe(
       // Quantity may lose its leading digit (".0 Nos"); amounts must end on
       // two decimals, not run into a split "2.400 00".
-      R"(\b(\d{8})\s+([\d.,]*\d)\s*([A-Za-z]{2,5})\b\W*(\d[\d.]*)\s+(\d[\d,]*\.\d{2})(?![\d])\W*(\d[\d,]*\.\d{2}(?![\d]))?)");
+      R"(\b(\d{8})\s+([\d.,]*\d)\s*([A-Za-z]{2,5})\b[\W_]*(\d[\d.]*)\s+(\d[\d,]*\.\d{2})(?![\d])\W*(\d[\d,]*\.\d{2}(?![\d]))?)");
   for (auto it = std::sregex_iterator(t.begin(), t.end(), itemRe); it != std::sregex_iterator(); ++it) {
     const auto& m = *it;
     Item item{m[1], m[2], m[3], m[4], m[6].matched ? m[6].str() : m[5].str()};
-    if (m[6].matched && m[5].str() != m[6].str()) {
+    // Same amount in both columns but one lost its thousands comma: keep the
+    // formatted one.
+    if (m[6].matched && cents(m[5]) == cents(m[6]) && m[5].str().find(',') != std::string::npos) item.fob = m[5];
+    if (m[6].matched && cents(m[5]) != cents(m[6])) {
       // The two FOB columns carry the same amount; keep the one that is a
       // well-formed amount and note the disagreement.
       p.issues.push_back({"fob", "FOB columns differ for HS " + item.hsCode + ": " + m[5].str() + " vs " + m[6].str(), "", false});
@@ -256,6 +259,26 @@ ImportPermit extract(const std::string& raw) {
           p.issues.push_back({"undertaking_no", "year " + y + " is far from permit year", "", false});
         }
       }
+    }
+  }
+
+  // Dates: the invoice and the undertaking precede the permit; the permit
+  // runs out after it is issued. A violation is flagged, not "fixed": a
+  // 5/8 slip in a date usually has several plausible readings.
+  {
+    auto ymd = [](const std::string& d) -> long {
+      if (d.size() != 10) return -1;
+      return std::atol(d.substr(6, 4).c_str()) * 10000 + std::atol(d.substr(3, 2).c_str()) * 100 +
+             std::atol(d.substr(0, 2).c_str());
+    };
+    const long permit = ymd(f["permit_date"]);
+    if (permit > 0) {
+      for (const char* key : {"invoice_date", "undertaking_date", "lc_issue"}) {
+        const long d = ymd(f[key]);
+        if (d > permit) p.issues.push_back({key, std::string(key) + " is after the permit date; check the digits", "", false});
+      }
+      const long till = ymd(f["permitted_till"]);
+      if (till > 0 && till <= permit) p.issues.push_back({"permitted_till", "permitted till is not after the permit date", "", false});
     }
   }
 

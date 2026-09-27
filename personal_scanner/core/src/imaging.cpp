@@ -111,6 +111,32 @@ cv::Mat flattenIllumination(const cv::Mat& gray) {
   return out;
 }
 
+cv::Mat invertDarkRegions(const cv::Mat& flat) {
+  // Local mean over a window much larger than a stroke: ordinary text on
+  // paper stays bright; solid dark bands (reverse-printed headers) do not.
+  cv::Mat mean;
+  cv::blur(flat, mean, {41, 41});
+  cv::Mat dark = mean < 110;
+  cv::morphologyEx(dark, dark, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {15, 15}));
+  cv::Mat labels, stats, centroids;
+  const int n = cv::connectedComponentsWithStats(dark, labels, stats, centroids, 8);
+  cv::Mat out = flat.clone();
+  for (int i = 1; i < n; ++i) {
+    const int w = stats.at<int>(i, cv::CC_STAT_WIDTH), h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+    if (w < 60 || h < 25 || stats.at<int>(i, cv::CC_STAT_AREA) < 4000) continue;
+    // Reverse-printed bands are rectangles; stamps and signatures are not.
+    if (stats.at<int>(i, cv::CC_STAT_AREA) < 0.3 * w * h) continue;
+    const cv::Rect box(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP), w, h);
+    cv::Mat region = (labels(box) == i);
+    cv::dilate(region, region, cv::getStructuringElement(cv::MORPH_RECT, {21, 21}));
+    cv::Mat inv = 255 - out(box);
+    // Re-stretch: the inverted background is mid-grey, not white.
+    cv::normalize(inv, inv, 0, 255, cv::NORM_MINMAX, -1, region);
+    inv.copyTo(out(box), region);
+  }
+  return out;
+}
+
 cv::Mat binarize(const cv::Mat& flat) {
   cv::Mat ink;
   cv::threshold(flat, ink, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
@@ -179,11 +205,50 @@ double medianTextHeight(const cv::Mat& ink) {
   return heights[heights.size() / 2];
 }
 
+namespace {
+
+// Keeps components of `mask` whose extent along the rule direction is at
+// least `minLength`.
+cv::Mat keepLong(const cv::Mat& mask, int minLength, bool horizontal) {
+  cv::Mat labels, stats, centroids;
+  const int n = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8);
+  cv::Mat keep = cv::Mat::zeros(1, n, CV_8U);
+  for (int i = 1; i < n; ++i) {
+    const int extent = stats.at<int>(i, horizontal ? cv::CC_STAT_WIDTH : cv::CC_STAT_HEIGHT);
+    keep.at<uchar>(i) = extent >= minLength ? 255 : 0;
+  }
+  cv::Mat out(mask.size(), CV_8U);
+  for (int y = 0; y < mask.rows; ++y) {
+    const int* l = labels.ptr<int>(y);
+    uchar* o = out.ptr<uchar>(y);
+    for (int x = 0; x < mask.cols; ++x) o[x] = keep.at<uchar>(l[x]);
+  }
+  return out;
+}
+
+}  // namespace
+
 cv::Mat rulingLines(const cv::Mat& ink, int minHorizontal, int minVertical) {
+  // Rules on photographed or curled paper are wavy and broken, so a single
+  // long straight kernel misses them. Find short straight segments, bridge
+  // small gaps, and keep only what joins up into a long line.
+  const int hSeg = std::max(15, minHorizontal / 6);
+  const int vSeg = std::max(15, minVertical / 2);
+  // Curl tilts rules locally by a few degrees; thicken the ink across the
+  // rule direction first so a 1-pixel-thin kernel still fits inside.
+  cv::Mat inkH, inkV;
+  cv::dilate(ink, inkH, cv::getStructuringElement(cv::MORPH_RECT, {1, 5}));
+  cv::dilate(ink, inkV, cv::getStructuringElement(cv::MORPH_RECT, {3, 1}));
   cv::Mat h, v;
-  cv::morphologyEx(ink, h, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {minHorizontal, 1}));
-  cv::morphologyEx(ink, v, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {1, minVertical}));
-  cv::Mat lines = h | v;
+  cv::morphologyEx(inkH, h, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {hSeg, 1}));
+  // Bridge only tiny breaks: anything near a word gap would chain the matras
+  // of a Bengali text line into one long "rule".
+  cv::morphologyEx(h, h, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, {5, 3}));
+  h = keepLong(h, minHorizontal, true);
+  cv::morphologyEx(inkV, v, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, {1, vSeg}));
+  cv::morphologyEx(v, v, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, {3, 5}));
+  v = keepLong(v, minVertical, false);
+  cv::Mat lines = (h | v) & ink;
   // Thicken slightly so anti-aliased edges of the rules go too.
   cv::dilate(lines, lines, cv::getStructuringElement(cv::MORPH_RECT, {3, 3}));
   return lines;
