@@ -1,0 +1,6 @@
+# উইন্ডোজ লঞ্চারে CRLF রাখিতেই হইবে — নতুবা cmd.exe চালাইতে পারে না
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# শেল স্ক্রিপ্টে LF
+*.sh   text eol=lf
+*.command text eol=lf

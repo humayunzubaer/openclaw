@@ -1,0 +1,522 @@
+{
+  "platform": "Master Audit Platform",
+  "kb_version": "1.0",
+  "build_date": "2026-08-08",
+  "certainty_levels": {
+    "V": "Verified — primary source (bdlaws/gazette) or established audit practice; usable in SCN",
+    "E": "Estimated — reliable secondary source; verify against gazette before SCN",
+    "P": "Pending — do NOT assert; render as [যাচাই করুন] flag in red C00000"
+  },
+  "global_constraints": {
+    "never_fabricate": [
+      "section_numbers",
+      "rule_numbers",
+      "sro_numbers",
+      "rates",
+      "dates",
+      "figures"
+    ],
+    "finding_structure": [
+      "identify",
+      "quantify",
+      "cite_law",
+      "state_consequence"
+    ],
+    "large_figures": "digits + Bengali words, lakh/crore format",
+    "output_language": "Bengali formal; English technical terms in English",
+    "docx_fonts": {
+      "bengali": "SutonnyMJ (true Bijoy ANSI bytes)",
+      "english": "Times New Roman"
+    },
+    "color_policy": "no color except findings in C00000",
+    "temporal_law_selection": {
+      "customs_act_2023_effective": "2024-06-06",
+      "customs_act_2023_effectiveness_sro": "SRO 153-Ain/2024 dt 2024-05-28",
+      "pre_2024_06_06_events": "Customs Act 1969 ss.84-119",
+      "vat_return_cadence_switch": {
+        "until": "2026-06-30 monthly Mushak 9.1",
+        "from": "2026-07-01 three-tax-period cycle, file within 15 days (Finance Act 2026, Act 96 of 2026)",
+        "certainty": "V-secondary; gazette-check"
+      }
+    }
+  },
+  "rules": [
+    {
+      "id": "T01",
+      "name": "bond_register_reconciliation",
+      "inputs": [
+        "opening_kg",
+        "be_receipts_kg[]",
+        "consumption_kg[]",
+        "approved_disposals_kg[]",
+        "closing_register_or_physical_kg"
+      ],
+      "formula": "computed_closing = opening + sum(be_receipts) - sum(consumption) - sum(approved_disposals); gap = closing_register_or_physical - computed_closing",
+      "threshold": "abs(gap)/computed_closing > 0.005 -> explain; unexplained -> demand",
+      "law_ref": [
+        {
+          "cite": "Customs Act 2023 s.126(ga) unaccounted goods",
+          "certainty": "V"
+        },
+        {
+          "cite": "s.128 record-keeping",
+          "certainty": "V"
+        }
+      ],
+      "consequence": "gap_kg * exbond_assessable_value_per_kg * full_duty_rates + interest s.32",
+      "severity": "high"
+    },
+    {
+      "id": "T02",
+      "name": "vat_triangle_test",
+      "inputs": [
+        "mushak91_notes_by_period",
+        "reg61_62_totals",
+        "ledger_bank_totals",
+        "bex_fob_by_period"
+      ],
+      "checks": [
+        "zero_rated_note == sum(bex_fob*rate)",
+        "rebate_claims backed by 6.1 invoices per s.46",
+        "frozen_note: identical value >=3 consecutive periods -> flag",
+        "vds_pair_match (see T12)"
+      ],
+      "law_ref": [
+        {
+          "cite": "VAT&SD Act 2012 ss.64,85,86",
+          "certainty": "V-position"
+        }
+      ],
+      "consequence": "s.85 penalty (max-limit practice) + separate tax demand if tax effect",
+      "severity": "high"
+    },
+    {
+      "id": "T03",
+      "name": "fifo_lot_tracking",
+      "inputs": [
+        "be_lots[date,qty]",
+        "consumption_entries[date,qty]"
+      ],
+      "formula": "consume oldest lot first; lot_age = consume_date - inbond_date",
+      "threshold": {
+        "storage_months": {
+          "direct_or_deemed_export": 24,
+          "shipbuilding_export": 48,
+          "duty_free_paid_diplomatic_commissariat": 12,
+          "home_consumption_or_other": 6
+        },
+        "commissioner_extension_months_max": 6,
+        "beyond": "NBR case-to-case (SRO 211 বিধি ৫ শর্তসাপেক্ষ)",
+        "clock_start": "আমদানি: ছাড়ের তারিখ; স্থানীয়: মূসক চালান-তারিখ"
+      },
+      "law_ref": "Customs Act 2023 ধারা ১১৯ + SRO ২১১-আইন/২০২৪/৬৩ বিধি ৩-৫",
+      "severity": "medium",
+      "certainty": "V"
+    },
+    {
+      "id": "T04",
+      "name": "coefficient_up_ud_utilization",
+      "inputs": [
+        "export_qty[]",
+        "coefficients[]",
+        "clearances[]",
+        "up_ud_validity_windows"
+      ],
+      "formula": "entitled = sum(export_qty*coeff); overdrawal = actual_clearance - entitled; date in validity?",
+      "law_ref": [
+        {
+          "cite": "UP/UD conditions + s.12(4)(ka) + s.126",
+          "certainty": "V/E"
+        }
+      ],
+      "precedent": "expired-DEDO clearance precedent",
+      "severity": "high"
+    },
+    {
+      "id": "T05",
+      "name": "wastage_test",
+      "inputs": [
+        "input_kg",
+        "output_equiv_input_kg",
+        "approved_pct",
+        "destruction_certificates",
+        "dta_sales_of_waste"
+      ],
+      "formula": "actual_pct = (input-output_equiv)/input*100; excess_kg = max(0, actual_pct-approved_pct)/100*input",
+      "branch": {
+        "export_linked_and_destroyed": "no duty (s.117(2)(ka))",
+        "export_linked_not_destroyed": "duty as if imported in that state",
+        "home_consumption_or_dta": "duty; value by Commissioner(Bond) s.117(2)(kha)"
+      },
+      "law_ref": [
+        {
+          "cite": "Customs Act 2023 s.117(2)",
+          "certainty": "V"
+        }
+      ],
+      "precedent": "নজির-ক 3.34% across 287 SB x 27 RM, demand ~BDT 3.75 crore",
+      "severity": "high"
+    },
+    {
+      "id": "T06",
+      "name": "value_addition",
+      "inputs": [
+        "export_fob",
+        "imported_input_value",
+        "min_va_pct"
+      ],
+      "formula": "va_pct = (export_fob - imported_input_value)/imported_input_value*100",
+      "anti_pattern_detector": "authoritative base = imported input value (auditor-set, Case-B 23.45%); if base=export_fob is used VA is understated — engine computes both and flags the discrepancy",
+      "threshold": {
+        "min_va_percent": 15
+      },
+      "precedent": "Case-C 11.40% vs 15%, risk > BDT 1.57 crore",
+      "severity": "high",
+      "law_ref": "SRO ২১২-আইন/২০২৪/৬৪ বিধি ১০(৮) — VA হার ইউপিতে উল্লেখ বাধ্যতামূলক, ≥১৫%; গণনা-স্থান: তফসিল-২ ক্রমিক ১৪(ঘ)",
+      "certainty": "V"
+    },
+    {
+      "id": "T07",
+      "name": "btb_lc_three_way_match",
+      "inputs": [
+        "lc_bank[]",
+        "lc_customs[]",
+        "lc_register[]",
+        "master_lc_values"
+      ],
+      "formula": "set differences; entitlement: sum(btb) <= master_limit_pct [E]",
+      "precedent": "নজির-ক 107 LCs absent from bond register",
+      "severity": "high"
+    },
+    {
+      "id": "T08",
+      "name": "export_proceeds_ageing",
+      "inputs": [
+        "bex_or_exp_dates[]",
+        "values[]",
+        "realization_dates[]"
+      ],
+      "formula": "due = ship_date + 120d; overdue_days = realization - due",
+      "law_ref": [
+        {
+          "cite": "FERA 1947 repatriation duty [E-section] + GFET",
+          "certainty": "E"
+        }
+      ],
+      "report_class": "supplementary_observation_only",
+      "severity": "medium"
+    },
+    {
+      "id": "T09",
+      "name": "dta_exbond_duty",
+      "inputs": [
+        "qty",
+        "unit_value",
+        "hs_rates{cd,rd,sd,vat,ait,at}",
+        "exbond_declaration_date"
+      ],
+      "formula": "AV=qty*unit_value; CD=AV*cd; RD=AV*rd; SD=(AV+CD+RD)*sd; VAT=(AV+CD+RD+SD)*0.15; AIT=AV*ait; AT=(AV+CD+RD+SD)*at",
+      "rate_date_rule": {
+        "cite": "s.30(kha): rates as on ex-bond goods-declaration registration (s.83)",
+        "certainty": "V"
+      },
+      "calc_order_certainty": "E (ASYCUDA convention); rates always from Operative Tariff, never assumed",
+      "precedent": "নজির-ক negative plates 3,510,000 pcs HS 8507.90.90 ~BDT 5.47 crore",
+      "severity": "high"
+    },
+    {
+      "id": "T10",
+      "name": "machinery_import_compliance",
+      "inputs": [
+        "machinery_be_list",
+        "license_annexure"
+      ],
+      "formula": "unapproved = be_list - annexure",
+      "law_ref": [
+        {
+          "cite": "s.12(4)(ka) breach + exemption-SRO condition breach [P per-case SRO no.]",
+          "certainty": "V/P"
+        }
+      ],
+      "precedent": "নজির-ক 8 B/Es AV ~BDT 2.12 crore",
+      "severity": "medium"
+    },
+    {
+      "id": "T11",
+      "name": "solvency_ownership",
+      "inputs": [
+        "audited_fs_equity",
+        "rjsc_form12",
+        "license_records"
+      ],
+      "rules": [
+        "equity<0 -> Rule 16 concern [E]",
+        "share transfer w/o approval -> Rule 20 [E]"
+      ],
+      "report_class": "administrative_recommendation_not_duty_demand",
+      "severity": "medium"
+    },
+    {
+      "id": "T12",
+      "name": "vds_four_layer_reconciliation",
+      "inputs": [
+        "expense_ledger_by_head",
+        "vds_rate_table_yearlocked[P]",
+        "treasury_challans",
+        "mushak91_increasing_adj",
+        "mushak66_register"
+      ],
+      "formula": "deductible = sum(head_amount*rate, excluding Rule5 exemptions); require deductible == ledger_liability == challan_total == 91_increasing == 66_total",
+      "law_ref": [
+        {
+          "cite": "VAT Act s.49; VDS Rules 2021 SRO 240-Ain/2021/163-Mushak; s.50(3) for deductee",
+          "certainty": "V"
+        },
+        {
+          "cite": "deposit/certificate day-limits Rules 6-7",
+          "certainty": "P"
+        }
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "T13",
+      "name": "zero_rated_documentation",
+      "inputs": [
+        "per_export_docset"
+      ],
+      "required_docs": [
+        "B/Ex",
+        "EXP",
+        "LC_or_contract",
+        "invoice_packing",
+        "BL_AWB",
+        "PRC"
+      ],
+      "deemed_export_variant": [
+        "local_BTB_LC",
+        "fx_receipt_proof"
+      ],
+      "law_ref": [
+        {
+          "cite": "VAT&SD Act 2012 s.21",
+          "certainty": "V"
+        }
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "T04A_entitlement_ceiling",
+      "name": "আমদানি প্রাপ্যতা-সীমা",
+      "certainty": "V",
+      "law_ref": "SRO ২১৪-আইন/২০২৪/৬৬ বিধি ৩,৪,৫,১০,১১,১২,১৪,১৫",
+      "formulas": {
+        "annual_capacity": "300 * shifts * 8 * machine_count * hourly_capacity",
+        "new_license_entitlement": "0.30 * annual_capacity",
+        "renewal_entitlement": "prev_year_export_rm_used * 1.20 (incl. stock)",
+        "compliant_cap": "0.60 * annual_capacity",
+        "hard_cap": "entitlement + opening_stock <= 0.80 * annual_capacity",
+        "one_time_stock": "min(entitlement/3, approved_warehouse_capacity)"
+      },
+      "compliance_gate": [
+        "no adjudication order (or revenue+fine paid)",
+        "Mushak-9.1 filed in >=1 immediately preceding FY"
+      ],
+      "increase_barred": [
+        "s.238 notice pending",
+        "forgery proven",
+        "license suspended",
+        "final ruling for govt & unpaid"
+      ],
+      "approval_level": {
+        "rules_4_5_6": "Joint Commissioner+",
+        "above_60pct_or_above_20pct_addition": "Commissioner"
+      }
+    }
+  ],
+  "temporal_registry": {
+    "principle": {
+      "substantive": "হার/দায়/অব্যাহতি/লঙ্ঘন-সংজ্ঞা = ঘটনার নোঙর-তারিখে বলবৎ সংস্করণ",
+      "procedural": "নোটিশ/ন্যায়নির্ণয়ন/আদায়/আপিল = পদক্ষেপের তারিখে বলবৎ আইন (কাস্টমস আইন ২০২৩ ধারা ২৬৯(২))",
+      "law_ref": "Customs Act 2023 s.269 (রহিতকরণ ও হেফাজত)",
+      "certainty": "V"
+    },
+    "event_anchors": {
+      "import_rate_direct": {
+        "anchor": "মূল B/E নিবন্ধনের তারিখ",
+        "law_ref": "ধারা ৩০(ক)",
+        "certainty": "V"
+      },
+      "warehoused_goods_rate": {
+        "anchor": "এক্স-বন্ড B/E নিবন্ধনের তারিখ",
+        "law_ref": "ধারা ৩০(খ) (৮৩/১৩৪ সহপাঠে)",
+        "certainty": "V"
+      },
+      "exchange_rate": {
+        "anchor": "ধারা ২৭(৪)-নির্ধারিত তারিখ",
+        "certainty": "V"
+      },
+      "vat_liability": {
+        "anchor": "সংশ্লিষ্ট কর মেয়াদ",
+        "certainty": "V"
+      },
+      "vds_liability": {
+        "anchor": "পণ পরিশোধের তারিখ",
+        "law_ref": "বিধি ৪০(১)(চ)",
+        "certainty": "V"
+      },
+      "into_bond_clock": {
+        "anchor": "Exit Note তারিখ +৫(+৭) দিন",
+        "law_ref": "SRO 212/2024 বিধি ৮",
+        "effective_from": "2024-06-06",
+        "certainty": "V"
+      },
+      "storage_clock": {
+        "anchor": "ছাড়ের তারিখ / মূসক চালান-তারিখ",
+        "law_ref": "SRO 211/2024",
+        "effective_from": "2024-06-06",
+        "certainty": "V"
+      },
+      "machinery_clock": {
+        "anchor": "স্থাপনের তারিখ +১৫ কার্যদিবস",
+        "law_ref": "SRO 209/2024 বিধি ৮",
+        "effective_from": "2024-06-06",
+        "certainty": "V"
+      }
+    },
+    "instruments": [
+      {
+        "id": "customs_act_1969",
+        "effective_from": null,
+        "effective_to": "2024-06-05",
+        "certainty": "V",
+        "module": "14"
+      },
+      {
+        "id": "customs_act_2023",
+        "effective_from": "2024-06-06",
+        "effective_to": null,
+        "note": "SRO 153-আইন/2024 dt 28-05-2024",
+        "certainty": "V"
+      },
+      {
+        "id": "bond_sro_family_2024_209_214",
+        "effective_from": "2024-06-06",
+        "effective_to": null,
+        "note": "জারি 29-05-2024",
+        "certainty": "V"
+      },
+      {
+        "id": "bond_licensing_rules_2008",
+        "effective_from": null,
+        "effective_to": "2024-06-05",
+        "certainty": "P",
+        "flag": "SRO-নম্বর ও মূলপাঠ অ-ইনজেস্টেড"
+      },
+      {
+        "id": "vat_sd_act_2012_rules_2016",
+        "effective_from": "2019-07-01",
+        "effective_to": null,
+        "certainty": "V"
+      },
+      {
+        "id": "rule_40_1_ga_replacement",
+        "effective_from": "2019-06-13",
+        "note": "SRO 171-আইন/2019/28-মূসক — ৬.৩ contents প্রতিস্থাপন",
+        "certainty": "V"
+      },
+      {
+        "id": "rule_21_15_working_days",
+        "note": "বিধি ২১: ৭→১৫ কার্যদিবস; বিধি ১৯(৩): ৬০→১২০ দিন (২০২০-সংশোধনী)",
+        "effective_from": "2020-00-00",
+        "certainty": "E",
+        "flag": "গেজেট-তারিখ যাচাই"
+      },
+      {
+        "id": "finance_act_2026",
+        "effective_from": "2026-07-01",
+        "note": "Act 96/2026 — ত্রৈমাসিক দাখিলপত্র-চক্র",
+        "certainty": "V"
+      },
+      {
+        "id": "mushak_9_1_form_version",
+        "effective_from": "2019-07-14",
+        "note": "৬৩-নোট সংস্করণ; নোট-নম্বর সংস্করণ-লকড",
+        "certainty": "V"
+      },
+      {
+        "id": "bond_capacity_amendment_may_2025",
+        "effective_from": "2025-05-00",
+        "note": "এককালীন ক্যাপাসিটি-কাঠামো সংশোধনী",
+        "certainty": "E",
+        "flag": "সংশোধনী-SRO অ-ইনজেস্টেড; ২৯-০৫-২০২৪ পাঠে ১/৩"
+      },
+      {
+        "id": "entitlement_order_14_2008",
+        "effective_from": "2008-06-29",
+        "effective_to": "2024-06-05",
+        "note": "NBR আদেশ ১৪/২০০৮ — বার্ষিক আমদানি প্রাপ্যতা নির্ধারণ আদেশ ২০০৮; SRO 214/2024 বিধি ১৮ দ্বারা রহিত",
+        "certainty": "V",
+        "savings_exception": "বিধি ১৮(২)(খ): অনিষ্পন্ন কার্যধারা রহিত আদেশের অধীনই নিষ্পন্ন — ধারা ২৬৯(২)(খ)-এর বিপরীত"
+      }
+    ],
+    "limitation": {
+      "general": "ঘটনার তারিখ হইতে ৩ বৎসরে ধারা ২০৩-নোটিশ (ধারা ২০৪(১))",
+      "fraud_exception": "ধারা ৩৩(৪) — তামাদি প্রযোজ্য নয়",
+      "certainty": "V",
+      "s204(2)_demand": "ধারা ৩৩-এর ক্ষেত্র ব্যতীত প্রাসঙ্গিক তারিখ হইতে ৩ বৎসরে দাবিনামা/বিজ্ঞপ্তি; প্রাসঙ্গিক তারিখ (গ) = পণ্য ছাড়ের তারিখ"
+    },
+    "resolver_contract": "resolve(instrument, event_date) -> version | flag('P'); flag হলে অঙ্ক-দাবি স্থগিত, আউটপুট 'যাচাই করুন'",
+    "output_requirement": "প্রতিটি finding-এ বাধ্যতামূলক ক্ষেত্র: প্রযোজ্য-সংস্করণ [উপকরণ + খণ্ড-তারিখ]; দ্বৈত-রেজিম মেয়াদে খণ্ডভিত্তিক পৃথক উপ-finding; মিশ্র-উদ্ধৃতি নিষিদ্ধ",
+    "historical_regime_1969": {
+      "module": "14_KB_HISTORICAL_REGIME_1969.md",
+      "certainty": "V",
+      "section_pairs": {
+        "T01_accounting": "2023 s.126(গ)+128 ↔ 1969 s.111(c)+114",
+        "recovery": "2023 s.127 ↔ 1969 s.112 (১৫ দিন; প্ল্যান্ট-মেশিনারি আটক)",
+        "wastage": "2023 s.117(2) ↔ 1969 s.95(2)(a)(b)",
+        "inspection": "2023 s.113(2) ↔ 1969 s.91 (FA2013 দপ্তর-তালিকা)",
+        "storage": "SRO 211/2024 ↔ 1969 s.98 (24/48/12/6; ঘড়ি: ওয়্যারহাউসিংয়ের তারিখ)"
+      },
+      "rate_date_eras": [
+        {
+          "era": "pre-FA2005",
+          "rule": "পণ্য প্রকৃত অপসারণের তারিখ",
+          "certainty": "V"
+        },
+        {
+          "era": "FA2005→2024-06-05",
+          "rule": "ধারা ৭৯-এর অধীন পেশকৃত B/E-র তারিখ ও নম্বর-বরাদ্দ",
+          "certainty": "V",
+          "interpretation_flag": "E: কোন B/E (ইন-বন্ড বনাম এক্স-বন্ড) — দপ্তরীয় চর্চা/নজিরে যাচাই বাধ্যতামূলক"
+        },
+        {
+          "era": "2024-06-06→",
+          "rule": "এক্স-বন্ড B/E নিবন্ধনের তারিখ (2023 Act s.30(খ))",
+          "certainty": "V"
+        }
+      ],
+      "limitation_1969": {
+        "s32(2)_collusion_untrue": "FA2010 থেকে সীমাহীন; তৎপূর্বে ৩ বছর",
+        "s32(3)_error": "০১-০৭-২০১৮ থেকে ৫ বছর; তৎপূর্বে ৩ বছর; অঙ্ক ≥ ৳১,০০০",
+        "relevant_date": "s.32(5)(a)-(d)",
+        "certainty": "V"
+      },
+      "amendment_anchors": {
+        "s98": "FA2009 w.e.f. 2007-07-01",
+        "s98(2A)": "2009-07-01",
+        "s98(4)": "2019-07-01",
+        "s104": "FA2023 w.e.f. 2023-07-01",
+        "s114(1)&(3)": "2023-07-01",
+        "s115_notice": "48h→2wd (2008-07-01)→3wd (FA2016)",
+        "s119B_electronic": "2022-07-01",
+        "s91_inspection_offices": "FA2013 w.e.f. 2013-07-01",
+        "s95_notice": "FA2000: ১৫ দিনের পূর্ব-নোটিশ"
+      }
+    },
+    "traps": [
+      "উৎসে কর কর্তন বিধিমালা ২০২৪ (SRO 161/আয়কর) ≠ উৎসে মূসক VDS (SRO 240-আইন/2021/163-মূসক)",
+      "প্রাপ্যতা-সংক্রান্ত অনিষ্পন্ন বিষয়ে ২০২৪-বিধি নয়, ২০০৮-আদেশ প্রযোজ্য"
+    ]
+  }
+}
