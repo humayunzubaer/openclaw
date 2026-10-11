@@ -1,0 +1,99 @@
+name: Bangla Translator app
+
+on:
+  push:
+    paths:
+      - "bangla-translator/**"
+      - ".github/workflows/bangla-translator.yml"
+  pull_request:
+    paths:
+      - "bangla-translator/**"
+      - ".github/workflows/bangla-translator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bangla-translator-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: bangla-translator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Flutter
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git flutter
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Analyze and test
+        run: |
+          flutter --disable-analytics
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build APK
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk bangla-translator.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: bangla-translator-android
+          path: bangla-translator/bangla-translator.apk
+          if-no-files-found: error
+
+  ios:
+    name: iPhone app (unsigned)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: bangla-translator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Flutter
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git flutter
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Build iOS app
+        run: |
+          flutter --disable-analytics
+          flutter pub get
+          flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry bangla-translator-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: bangla-translator-ios-unsigned
+          path: bangla-translator/bangla-translator-unsigned.ipa
+          if-no-files-found: error
