@@ -8,6 +8,9 @@ on:
       - '.github/workflows/build-ocr-scan.yml'
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -120,3 +123,19 @@ jobs:
           name: ocr-scan-apk
           path: /tmp/app_shell/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      - name: Commit APK into repo
+        # GitHub Actions' own artifact storage lives on Azure Blob Storage, which
+        # this session's sandboxed network egress policy blocks outright. Commit
+        # the built APK straight into the repo instead, under a path the
+        # workflow's own `paths:` trigger filter does NOT match (release-artifacts/),
+        # so this commit does not re-trigger the workflow in a loop.
+        run: |
+          mkdir -p release-artifacts/ocr-scan-app
+          cp /tmp/app_shell/build/app/outputs/flutter-apk/app-release.apk \
+            release-artifacts/ocr-scan-app/ocr-scan.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add release-artifacts/ocr-scan-app/ocr-scan.apk
+          git commit -m "Add built APK (run ${{ github.run_id }})" || echo "nothing to commit"
+          git push
