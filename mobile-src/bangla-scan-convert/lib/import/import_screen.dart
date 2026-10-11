@@ -31,15 +31,17 @@ class _ImportScreenState extends State<ImportScreen> {
   Future<void> _pickAndImport() async {
     setState(() { _busy = true; _error = null; });
     try {
-      final result = await FilePicker.platform.pickFiles(
+      // file_picker 12+: FilePicker.platform সরানো হয়েছে, static মেথড দিয়ে একটা
+      // ফাইল বেছে নিতে pickFile() ব্যবহার হয় (pickFiles() একাধিক ফাইল দেয়)।
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['docx', 'xlsx', 'jpg', 'jpeg', 'png'],
       );
-      if (result == null || result.files.single.path == null) {
+      if (file == null || file.path == null) {
         setState(() => _busy = false);
         return;
       }
-      final path = result.files.single.path!;
+      final path = file.path!;
       final ext = p.extension(path).toLowerCase();
       final title = p.basenameWithoutExtension(path);
 
