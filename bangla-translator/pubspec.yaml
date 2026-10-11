@@ -1,0 +1,26 @@
+name: bangla_translator
+description: "Offline English/Russian to Bangla translator with SutonnyMJ (Bijoy) output."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^13.1.0
+  google_mlkit_translation: ^0.15.1
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  # Put a licensed SutonnyMJ.ttf here to ship it inside the app (optional;
+  # users can also import it from the phone at runtime).
+  assets:
+    - assets/fonts/
