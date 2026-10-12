@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "source": "Synthetic fixtures from the Manus handoff (offline-ocr-scanner/benchmark). Ground truth re-checked against the rendered images: the signature line now keeps its colon, and underscore rules are ignored by the scorer.",
+  "privacy": "All fixtures are synthetic and contain no real identity information.",
+  "cases": [
+    {
+      "id": "ref-government-form",
+      "image": "government-form.png",
+      "category": "form",
+      "degradation": "clean",
+      "expectedText": "গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nসিন্থেটিক সরকারি ফর্ম — বাংলা লেখার বেঞ্চমার্ক\nআবেদনকারীর নাম মোছা: শারমিন আক্তার\nপিতার নাম মোঃ আব্দুল করিম\nমাতার নাম রওশন আরা বেগম\nজন্ম তারিখ ১৫ জানুয়ারি ১৯৯০\nঠিকানা গ্রাম: মেঘনা, ডাকঘর: চাঁদপুর, জেলা: কুমিল্লা\nমোবাইল নম্বর ০১৭১২-৩৪৫৬৭৮\nঘোষণা: আমি প্রদত্ত তথ্য সঠিক বলে ঘোষণা করছি।\nতারিখ: ০৫ মার্চ ২০২৬ স্বাক্ষর:"
+    },
+    {
+      "id": "ref-synthetic-nid",
+      "image": "synthetic-nid.png",
+      "category": "id-card",
+      "degradation": "clean",
+      "expectedText": "সিন্থেটিক পরিচয় কার্ড\nজাতীয় পরিচয়পত্র\nছবি\nনাম: সুমন হোসেন\nপিতা: আনোয়ার হোসেন\nজন্ম তারিখ: ২০/০৮/১৯৮৮\nআইডি নম্বর: ১৯৮৮১২৩৪৫৬৭৮৯০১২৩\nএটি একটি কাল্পনিক পরিচয়পত্র; কোনো বাস্তব ব্যক্তির তথ্য নয়।\nবাংলা ও ইংরেজি মিশ্র লেখা: সুমন হোসেন"
+    },
+    {
+      "id": "ref-revenue-table",
+      "image": "revenue-table.png",
+      "category": "table",
+      "degradation": "clean",
+      "expectedText": "মাসিক রাজস্ব বিবরণী\nসিন্থেটিক টেবিল — বাংলা ও সংখ্যার বেঞ্চমার্ক\nক্রম খাতের নাম পরিমাণ মন্তব্য\n১ আমদানি শুল্ক ১২৫০০০ পরিশোধিত\n২ রপ্তানি শুল্ক ৮৭৫০০ পরিশোধিত\n৩ ভ্যাট সংগ্রহ ২১০০০০ যাচাইাধীন\n৪ অন্যান্য আয় ৩২৫০০ পরিশোধিত\nমোট ৪৫৫০০০"
+    }
+  ]
+}

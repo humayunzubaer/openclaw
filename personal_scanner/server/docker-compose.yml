@@ -1,0 +1,30 @@
+# On the VPS (see HANDOFF_BN.md), with a .env file next to this one holding
+#   PS_API_KEY=<long random key>
+#   PS_DOMAIN=ocr.example.com      (DNS A record -> this VPS, or <ip-with-dashes>.sslip.io)
+# run:  docker compose up -d --build
+services:
+  ocr:
+    build: ..
+    restart: unless-stopped
+    environment:
+      PS_API_KEY: ${PS_API_KEY:?set PS_API_KEY in .env}
+      PS_CONCURRENCY: "2"
+    ports:
+      - "127.0.0.1:8080:8080"   # local checks only; the internet reaches it through https
+    mem_limit: 2g
+
+  # HTTPS in front of the API; Caddy fetches and renews the certificate itself.
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${PS_DOMAIN:?set PS_DOMAIN in .env} --to ocr:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - ocr
+
+volumes:
+  caddy_data:
