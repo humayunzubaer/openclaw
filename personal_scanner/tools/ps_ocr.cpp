@@ -1,7 +1,10 @@
 // Desktop front end for the Personal Scanner core, used by the benchmark.
 //
-//   ps_ocr [--json | --permit] [--lang ben] [--tessdata DIR] [--debug DIR]
+//   ps_ocr [--json | --permit | --bundle] [--lang ben] [--tessdata DIR] [--debug DIR]
 //          [--no-page] [--no-tables] [--no-rereads] IMAGE
+//
+// --bundle prints {"page": <page JSON>, "permit": <permit JSON>} from one
+// recognition pass; the HTTP server (server/app.py) uses it.
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -14,7 +17,7 @@
 
 int main(int argc, char** argv) {
   ps::Options opt;
-  bool json = false, permit = false;
+  bool json = false, permit = false, bundle = false;
   std::string image;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -24,6 +27,7 @@ int main(int argc, char** argv) {
     };
     if (a == "--json") json = true;
     else if (a == "--permit") permit = true;
+    else if (a == "--bundle") bundle = true;
     else if (a == "--lang") opt.languages = next();
     else if (a == "--tessdata") opt.tessdataDir = next();
     else if (a == "--debug") opt.debugDir = next();
@@ -47,8 +51,13 @@ int main(int argc, char** argv) {
   try {
     ps::Engine engine(opt);
     const ps::Page page = engine.recognize(img);
-    if (permit) std::cout << ps::permit::extract(page.text()).json() << '\n';
-    else std::cout << (json ? page.json() + "\n" : page.text());
+    if (bundle) {
+      std::cout << "{\"page\":" << page.json() << ",\"permit\":" << ps::permit::extract(page.text()).json() << "}\n";
+    } else if (permit) {
+      std::cout << ps::permit::extract(page.text()).json() << '\n';
+    } else {
+      std::cout << (json ? page.json() + "\n" : page.text());
+    }
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     return 1;

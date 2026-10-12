@@ -1,0 +1,4 @@
+build/
+bench/
+**/__pycache__/
+*.md

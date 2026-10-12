@@ -71,6 +71,13 @@ python3 bench/field_score.py bench/private/ip/fields.json --extract   # আস�
 ctest --test-dir build                          # unit test
 ```
 
+## সার্ভার হিসেবে চালানো (Base44 বা অন্য অ্যাপের জন্য)
+
+`server/app.py` ইঞ্জিনটাকে HTTP API বানায়: `POST /v1/scan`-এ ছবি বা PDF পাঠালে প্রতিটা পাতার লেখা,
+টেবিলের ঘর আর (Import Permit হলে) যাচাইসহ ঘরগুলো JSON-এ ফেরত দেয়। `?page=N` দিয়ে PDF-এর একটা পাতা
+পড়া যায়। VPS-এ `server/docker-compose.yml` দিয়ে HTTPS-সহ চালু হয়। বিস্তারিত ধাপ
+[HANDOFF_BN.md](HANDOFF_BN.md)-তে; Base44 এজেন্টের জন্য নির্দেশনা [BASE44_BRIEF.md](BASE44_BRIEF.md)-তে।
+
 CI (`.github/workflows/personal-scanner-core.yml`) প্রতিটা পরিবর্তনে benchmark চালায়; নির্ভুলতা
 নির্দিষ্ট সীমার নিচে নামলে ব্যর্থ হয়।
 
@@ -82,7 +89,10 @@ core/src/imaging.*           পাতা খোঁজা, আলো, দিক,
 core/src/tables.*            ছকের ঘর খোঁজা
 core/src/engine.cpp          পুরো প্রক্রিয়া ও পুনঃপাঠ
 core/src/text.*              UTF-8 ও অঙ্ক-বিশ্লেষণ
-tools/ps_ocr.cpp             কমান্ড-লাইন টুল
+tools/ps_ocr.cpp             কমান্ড-লাইন টুল (--bundle: পাতা + Permit একসাথে JSON)
+server/app.py                HTTP API (FastAPI)
+server/docker-compose.yml    VPS-এ সার্ভার + HTTPS (Caddy)
+Dockerfile                   সার্ভারের image
 bench/generate.py            কৃত্রিম কাগজ তৈরি
 bench/score.py               নির্ভুলতা মাপা
 bench/reference/             Manus-এর ৩টা নমুনা (সংশোধিত উত্তরসহ)

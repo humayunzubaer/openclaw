@@ -1,0 +1,7 @@
+build/
+bench/generated/
+__pycache__/
+# Real documents never go in git: keep them in bench/private/ (ignored).
+bench/private/
+# Server secrets (PS_API_KEY, PS_DOMAIN) stay on the VPS.
+server/.env
