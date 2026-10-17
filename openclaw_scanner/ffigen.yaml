@@ -1,0 +1,37 @@
+# Generate: dart run ffigen --config ffigen.yaml
+name: ScannerCoreBindings
+description: Dart FFI bindings for the OpenClaw scanner native core.
+output: 'lib/native/scanner_core_bindings.g.dart'
+
+headers:
+  entry-points:
+    - 'native/include/scanner_core.h'
+  include-directives:
+    - '**scanner_core.h'
+
+compiler-opts:
+  - '-Inative/include'
+  - '-std=c11'
+
+# LLVM auto-না পেলে path দিন (libclang):
+# llvm-path:
+#   - '/opt/homebrew/opt/llvm'   # macOS
+#   - '/usr/lib/llvm-18'         # Linux
+
+functions:
+  include: ['sc_.*']
+  symbol-address:
+    include: ['sc_inpaint_create', 'sc_handseg_create']
+structs:
+  include: ['Sc.*']
+enums:
+  include: ['Sc.*']
+typedefs:
+  include: ['ScProgressCb']
+comments:
+  style: any
+  length: full
+
+preamble: |
+  // GENERATED FILE — do not edit. Run: dart run ffigen --config ffigen.yaml
+  // ignore_for_file: type=lint, unused_field, non_constant_identifier_names, camel_case_types

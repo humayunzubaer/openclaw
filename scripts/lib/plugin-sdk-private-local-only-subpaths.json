@@ -1,0 +1,10 @@
+[
+  "codex-native-task-runtime",
+  "provider-stream-runtime-internal",
+  "qa-channel",
+  "qa-channel-protocol",
+  "qa-lab",
+  "qa-runtime",
+  "ssrf-runtime-internal",
+  "test-utils"
+]

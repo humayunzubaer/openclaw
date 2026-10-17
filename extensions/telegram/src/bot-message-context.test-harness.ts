@@ -1,15 +1,22 @@
-import { vi } from "vitest";
-import {
-  buildTelegramMessageContext,
-  type BuildTelegramMessageContextParams,
-  type TelegramMediaRef,
-} from "./bot-message-context.js";
+import { createHash } from "node:crypto";
+import { buildChannelInboundEventContext } from "openclaw/plugin-sdk/channel-inbound";
+import type { BuildTelegramMessageContextParams, TelegramMediaRef } from "./bot-message-context.js";
+import { setTelegramTopicNameStoreFactoryForTest } from "./topic-name-cache.js";
 
 export const baseTelegramMessageContextConfig = {
   agents: { defaults: { model: "anthropic/claude-opus-4-5", workspace: "/tmp/openclaw" } },
-  channels: { telegram: {} },
+  channels: { telegram: { dmPolicy: "open", allowFrom: ["*"] } },
   messages: { groupChat: { mentionPatterns: [] } },
 } as never;
+
+type TelegramTestSessionRuntime = NonNullable<BuildTelegramMessageContextParams["sessionRuntime"]>;
+type TopicNameEntryForTest = {
+  name: string;
+  iconColor?: number;
+  iconCustomEmojiId?: string;
+  closed?: boolean;
+  updatedAt: number;
+};
 
 type BuildTelegramMessageContextForTestParams = {
   message: Record<string, unknown>;
@@ -17,14 +24,78 @@ type BuildTelegramMessageContextForTestParams = {
   options?: BuildTelegramMessageContextParams["options"];
   cfg?: Record<string, unknown>;
   accountId?: string;
+  historyLimit?: number;
+  groupHistories?: Map<string, import("openclaw/plugin-sdk/reply-history").HistoryEntry[]>;
+  ackReactionScope?: BuildTelegramMessageContextParams["ackReactionScope"];
+  botApi?: Record<string, unknown>;
+  runtime?: BuildTelegramMessageContextParams["runtime"];
+  sessionRuntime?: BuildTelegramMessageContextParams["sessionRuntime"] | null;
   resolveGroupActivation?: BuildTelegramMessageContextParams["resolveGroupActivation"];
   resolveGroupRequireMention?: BuildTelegramMessageContextParams["resolveGroupRequireMention"];
   resolveTelegramGroupConfig?: BuildTelegramMessageContextParams["resolveTelegramGroupConfig"];
 };
 
+const telegramTopicNameStoresForTest = new Map<string, Map<string, TopicNameEntryForTest>>();
+
+function resolveSessionStorePathForTest(testName: string | undefined): string {
+  const hash = createHash("sha256")
+    .update(`${process.pid}:${testName ?? "unknown"}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `/tmp/openclaw/session-store-${hash}.json`;
+}
+
+function createTelegramMessageContextSessionRuntimeForTest(
+  storePath: string,
+): TelegramTestSessionRuntime {
+  return {
+    buildChannelInboundEventContext,
+    readSessionUpdatedAt: () => undefined,
+    recordInboundSession: async () => undefined,
+    resolveInboundLastRouteSessionKey: ({ route, sessionKey }) =>
+      route.lastRoutePolicy === "main" ? route.mainSessionKey : sessionKey,
+    resolvePinnedMainDmOwnerFromAllowlist: () => null,
+    resolveStorePath: () => storePath,
+  };
+}
+
+function installTelegramTopicNameStoreForTest() {
+  setTelegramTopicNameStoreFactoryForTest((namespace) => {
+    const entries = telegramTopicNameStoresForTest.get(namespace) ?? new Map();
+    telegramTopicNameStoresForTest.set(namespace, entries);
+    return {
+      async register(key, value) {
+        entries.set(key, value);
+      },
+      async entries() {
+        return Array.from(entries, ([key, value]) => ({ key, value }));
+      },
+      async delete(key) {
+        return entries.delete(key);
+      },
+      async clear() {
+        entries.clear();
+      },
+    };
+  });
+}
+
 export async function buildTelegramMessageContextForTest(
   params: BuildTelegramMessageContextForTestParams,
-): Promise<Awaited<ReturnType<typeof buildTelegramMessageContext>>> {
+): Promise<
+  Awaited<ReturnType<typeof import("./bot-message-context.js").buildTelegramMessageContext>>
+> {
+  const { expect, vi } = await loadVitestModule();
+  const buildTelegramMessageContext = await loadBuildTelegramMessageContext();
+  const sessionRuntime =
+    params.sessionRuntime === null
+      ? undefined
+      : {
+          ...createTelegramMessageContextSessionRuntimeForTest(
+            resolveSessionStorePathForTest(expect.getState().currentTestName),
+          ),
+          ...params.sessionRuntime,
+        };
   return await buildTelegramMessageContext({
     primaryCtx: {
       message: {
@@ -43,16 +114,23 @@ export async function buildTelegramMessageContextForTest(
       api: {
         sendChatAction: vi.fn(),
         setMessageReaction: vi.fn(),
+        ...params.botApi,
       },
     } as never,
     cfg: (params.cfg ?? baseTelegramMessageContextConfig) as never,
+    loadFreshConfig: () => (params.cfg ?? baseTelegramMessageContextConfig) as never,
+    runtime: {
+      recordChannelActivity: () => undefined,
+      ...params.runtime,
+    },
+    sessionRuntime,
     account: { accountId: params.accountId ?? "default" } as never,
-    historyLimit: 0,
-    groupHistories: new Map(),
+    historyLimit: params.historyLimit ?? 0,
+    groupHistories: params.groupHistories ?? new Map(),
     dmPolicy: "open",
-    allowFrom: [],
+    allowFrom: ["*"],
     groupAllowFrom: [],
-    ackReactionScope: "off",
+    ackReactionScope: params.ackReactionScope ?? "off",
     logger: { info: vi.fn() },
     resolveGroupActivation: params.resolveGroupActivation ?? (() => undefined),
     resolveGroupRequireMention: params.resolveGroupRequireMention ?? (() => false),
@@ -63,5 +141,59 @@ export async function buildTelegramMessageContextForTest(
         topicConfig: undefined,
       })),
     sendChatActionHandler: { sendChatAction: vi.fn() } as never,
+  });
+}
+
+let buildTelegramMessageContextLoader:
+  | typeof import("./bot-message-context.js").buildTelegramMessageContext
+  | undefined;
+let vitestModuleLoader: Promise<typeof import("vitest")> | undefined;
+let messageContextMocksInstalled = false;
+type TopicNameCacheEntry = {
+  name: string;
+  iconColor?: number;
+  iconCustomEmojiId?: string;
+  closed?: boolean;
+  updatedAt: number;
+};
+const topicNameStoresForTest = new Map<string, Map<string, TopicNameCacheEntry>>();
+
+async function loadBuildTelegramMessageContext() {
+  await installMessageContextTestMocks();
+  if (!buildTelegramMessageContextLoader) {
+    ({ buildTelegramMessageContext: buildTelegramMessageContextLoader } =
+      await import("./bot-message-context.js"));
+  }
+  return buildTelegramMessageContextLoader;
+}
+
+async function loadVitestModule() {
+  vitestModuleLoader ??= import("vitest");
+  return await vitestModuleLoader;
+}
+
+async function installMessageContextTestMocks() {
+  installTelegramTopicNameStoreForTest();
+  if (messageContextMocksInstalled) {
+    return;
+  }
+  messageContextMocksInstalled = true;
+  const { setTelegramTopicNameStoreFactoryForTest } = await import("./topic-name-cache.js");
+  setTelegramTopicNameStoreFactoryForTest((namespace) => {
+    let store = topicNameStoresForTest.get(namespace);
+    if (!store) {
+      store = new Map();
+      topicNameStoresForTest.set(namespace, store);
+    }
+    return {
+      register: async (key, value) => {
+        store.set(key, value);
+      },
+      entries: async () => [...store.entries()].map(([key, value]) => ({ key, value })),
+      delete: async (key) => store.delete(key),
+      clear: async () => {
+        store.clear();
+      },
+    };
   });
 }
